@@ -1,0 +1,45 @@
+# ============================================================
+#  4-GU_EV_loc — IEEE 34-bus EVCS Localization Config
+#  Task: graph-level multi-label classification (3 EVCS)
+# ============================================================
+
+data:
+  bus_system: "34bus"
+  pkl_paths: "34_bus/EVCSAttacks_34.pkl"   # relative to SOURCE_DATA root
+  gml_path:  "34_bus/34busEx.gml"
+  evcs_bus_ids: [814, 890, 852]            # cumulative forget order, by EVCS station ID (S1=814, S2=890, S3=852)
+
+training:
+  test_size:         0.30    # fraction held out as test+val
+  val_ratio:         0.50    # fraction of (test+val) used as val
+  epochs:            300
+  batch_size:        64
+  lr:                1.0e-4
+  weight_decay:      1.0e-4
+  patience:          50      # early stopping on val Macro ROC-AUC
+  scheduler_patience: 20     # ReduceLROnPlateau patience
+  hidden_dim:        128
+  n_layers:          3
+  dropout:           0.3
+
+gdgu:
+  damp:            0.1    # damping factor λ: Δθ = Δg / λ
+  max_norm:        1.0    # gradient clipping norm ρ after damping
+  finetune_epochs: 25     # recovery fine-tuning epochs E_ft
+  finetune_lr:     1.0e-4
+
+gif:                       # GIF & IDEA shared hyperparameters
+  iteration:       50      # Neumann series iterations
+  damp:            0.01    # damping for (I - H/scale)
+  scale:           50.0    # Hessian scaling factor
+  idea_finetune:   25      # IDEA recovery fine-tuning epochs
+  max_batches:     11      # 50% of 22 total batches (train=1400, bs=64)
+
+experiment:
+  seeds:     [42, 43, 44, 45, 46, 47, 48, 49, 50, 51]
+  backbones: [GAT, GCN, GIN]
+route_a:                         # V6.0: single-head + aux attack-type head
+  gamma:            0.5          # aux loss weight: L = L_loc + gamma * L_type
+  n_attack_types:   5            # Nil + 4 attack types
+  aux_hidden:       64           # aux head hidden dim
+  ig_steps:         50           # Integrated Gradients steps (production)

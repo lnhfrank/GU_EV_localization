@@ -1,0 +1,47 @@
+# ============================================================
+#  4-GU_EV_loc — IEEE 8500-node EVCS Localization Config
+#  Task: graph-level multi-label classification (7 EVCS)
+#  Note: GAT excluded — attention computation graph exceeds
+#        VRAM for GIF/IDEA even on H100 NVL (94 GB).
+# ============================================================
+
+data:
+  bus_system: "8500bus"
+  pkl_paths: "8500_bus/EVCSAttacks_8500_job*_merged.pkl.gz"  # glob, streamed pickle
+  gml_path:  "8500_bus/8500busEx.gml"
+  evcs_bus_ids: [l3104136, l2895449, l3010560, l2876797, l2876814, l3081380, l2766718]
+
+training:
+  test_size:         0.30
+  val_ratio:         0.50
+  epochs:            300
+  batch_size:        64
+  lr:                1.0e-4
+  weight_decay:      1.0e-4
+  patience:          50
+  scheduler_patience: 20
+  hidden_dim:        128
+  n_layers:          3
+  dropout:           0.3
+
+gdgu:
+  damp:            0.1
+  max_norm:        1.0
+  finetune_epochs: 25
+  finetune_lr:     1.0e-4
+
+gif:
+  iteration:       50
+  damp:            0.01
+  scale:           50.0
+  idea_finetune:   25
+  max_batches:     4      # 36% of 11 total batches (train=700, bs=64)
+
+experiment:
+  seeds:     [42, 43, 44, 45, 46, 47, 48, 49, 50, 51]
+  backbones: [GCN, GIN]
+route_a:
+  gamma:            0.5
+  n_attack_types:   5
+  aux_hidden:       64
+  ig_steps:         50

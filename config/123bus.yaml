@@ -1,0 +1,45 @@
+# ============================================================
+#  4-GU_EV_loc — IEEE 123-bus EVCS Localization Config
+#  Task: graph-level multi-label classification (5 EVCS)
+# ============================================================
+
+data:
+  bus_system: "123bus"
+  pkl_paths: "123_bus/EVCSAttacks_123_job*_merged.pkl.gz"  # glob pattern
+  gml_path:  "123_bus/123busEx.gml"
+  evcs_bus_ids: [25, 40, 54, 62, 76]      # cumulative forget order
+
+training:
+  test_size:         0.30
+  val_ratio:         0.50
+  epochs:            300
+  batch_size:        64
+  lr:                1.0e-4
+  weight_decay:      1.0e-4
+  patience:          50
+  scheduler_patience: 20
+  hidden_dim:        128
+  n_layers:          3
+  dropout:           0.3
+
+gdgu:
+  damp:            0.1
+  max_norm:        1.0
+  finetune_epochs: 25
+  finetune_lr:     1.0e-4
+
+gif:                       # GIF & IDEA shared hyperparameters
+  iteration:       50      # Neumann series iterations
+  damp:            0.01    # damping for (I - H/scale)
+  scale:           50.0    # Hessian scaling factor
+  idea_finetune:   25      # IDEA recovery fine-tuning epochs
+  max_batches:     16      # 50% of 44 total batches (train=2800, bs=64)
+
+experiment:
+  seeds:     [42, 43, 44, 45, 46, 47, 48, 49, 50, 51]
+  backbones: [GAT, GCN, GIN]
+route_a:                         # V6.0: single-head + aux attack-type head
+  gamma:            0.5          # aux loss weight
+  n_attack_types:   5            # Nil + 4 attack types
+  aux_hidden:       64
+  ig_steps:         50
