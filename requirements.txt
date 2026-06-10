@@ -1,0 +1,36 @@
+# Environment: conda env torch-gpu, Python 3.10, CUDA 12.1
+#
+# Step 1 — Install PyTorch (CUDA 12.1 build):
+#   pip install torch==2.5.1+cu121 --index-url https://download.pytorch.org/whl/cu121
+#
+# Step 2 — Install PyG C++ extensions:
+#   pip install torch-scatter==2.1.2 torch-sparse==0.6.18 \
+#               torch-cluster==1.6.3 torch-spline-conv==1.2.2 \
+#               -f https://data.pyg.org/whl/torch-2.5.1+cu121.html
+#
+# Step 3 — Install the rest:
+#   pip install -r requirements.txt
+
+# GNN
+torch==2.5.1
+torch-geometric==2.7.0
+torch-scatter==2.1.2
+torch-sparse==0.6.18
+torch-cluster==1.6.3
+torch-spline-conv==1.2.2
+
+# Data & ML
+numpy==2.0.1
+pandas==2.3.3
+scikit-learn==1.7.2
+networkx==3.4.2
+
+# Visualization
+matplotlib==3.10.6
+seaborn==0.13.2
+
+# Config
+pyyaml==6.0.2
+
+# Notebook hygiene
+nbstripout==0.9.1
