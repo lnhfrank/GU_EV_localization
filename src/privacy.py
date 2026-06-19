@@ -157,10 +157,11 @@ def L2_a_integrated_gradients(
             accum = accum + grad.detach()
 
         avg_grad = accum / n_steps
-        ig_full = avg_grad * (x_orig - x_base)      # [sum_N, 96]
+        ig_full = avg_grad * (x_orig - x_base)      # [sum_N, 2*n_feat]
         B = batch.num_graphs
-        ig_3d = ig_full.view(B, n_nodes, -1)        # [B, N, 96]
-        sel = ig_3d[:, forget_node_idx, 48:]         # [B, (n_forget), 48]
+        ig_3d = ig_full.view(B, n_nodes, -1)        # [B, N, 2*n_feat] (V|P)
+        n_feat = ig_3d.shape[-1] // 2                # P modality starts at half
+        sel = ig_3d[:, forget_node_idx, n_feat:]     # [B, (n_forget), n_feat]
         ig_p = sel.abs().reshape(B, -1).sum(dim=-1)  # [B]
         vals.append(ig_p.detach().cpu().numpy())
 

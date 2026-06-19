@@ -32,8 +32,8 @@ gdgu:
 
 gif:
   iteration:       50
-  damp:            0.01
-  scale:           50.0
+  damp:            0.05    # raised for raw 576d stability (was 0.01)
+  scale:           200.0   # raised for raw 576d larger lambda_max (was 50.0)
   idea_finetune:   25
   max_batches:     4      # 36% of 11 total batches (train=700, bs=64)
 

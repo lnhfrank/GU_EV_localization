@@ -30,8 +30,8 @@ gdgu:
 
 gif:                       # GIF & IDEA shared hyperparameters
   iteration:       50      # Neumann series iterations
-  damp:            0.01    # damping for (I - H/scale)
-  scale:           50.0    # Hessian scaling factor
+  damp:            0.05    # damping for (I - H/scale); raised for raw 576d stability (was 0.01)
+  scale:           200.0   # Hessian scaling factor; raised for raw 576d larger lambda_max (was 50.0)
   idea_finetune:   25      # IDEA recovery fine-tuning epochs
   max_batches:     16      # 50% of 44 total batches (train=2800, bs=64)
 

@@ -40,14 +40,17 @@ EVCS_PRESETS = {
 }
 
 
-def load_evcs_data(pkl_paths, gml_path, evcs_map=None, bus_system='34bus'):
+def load_evcs_data(pkl_paths, gml_path, evcs_map=None, bus_system='34bus',
+                   feature_mode='mean_std'):
     """Load raw EVCS attack data and build node features, multi-hot labels, edge_index.
 
     Args:
-        pkl_paths: str or list of str. Single .pkl file or list of .pkl.gz files.
-        gml_path:  str. Path to GML topology file.
-        evcs_map:  dict or None. {'EVCS 1': '814', ...}. If None, uses preset.
-        bus_system: str. '34bus' or '123bus', used for preset lookup and returned tag.
+        pkl_paths:    str or list of str. Single .pkl file or list of .pkl.gz files.
+        gml_path:     str. Path to GML topology file.
+        evcs_map:     dict or None. {'EVCS 1': '814', ...}. If None, uses preset.
+        bus_system:   str. '34bus' or '123bus', used for preset lookup and returned tag.
+        feature_mode: 'mean_std' (default) — 24 hourly mean + 24 hourly std = 48-dim;
+                      'raw' — phase-averaged voltage at all 288 timesteps = 288-dim.
 
     Returns dict with keys:
         all_x, all_y, edge_index, n_nodes, n_feat, n_evcs,
@@ -93,11 +96,8 @@ def load_evcs_data(pkl_paths, gml_path, evcs_map=None, bus_system='34bus'):
         n_g = len(raw_chunk)
         n_nodes = len(bus_names)
 
-        # Node features: 48-dim voltage (24 hourly mean + 24 hourly std).
-        # Phase-averaged, then split each hour (12 steps × 5 min) into mean & std.
-        # mean captures magnitude changes (Type 1/3 attacks); std captures
-        # temporal volatility within each hour (Type 2/4 time-shift and surge).
-        x = np.zeros((n_g, n_nodes, 48), dtype=np.float32)
+        n_feat_v = 288 if feature_mode == 'raw' else 48
+        x = np.zeros((n_g, n_nodes, n_feat_v), dtype=np.float32)
         y = np.zeros((n_g, n_evcs), dtype=np.float32)
 
         for gi, scenario in enumerate(raw_chunk):
@@ -111,9 +111,12 @@ def load_evcs_data(pkl_paths, gml_path, evcs_map=None, bus_system='34bus'):
                     mean_phase = voltages[:, active].mean(axis=1)  # (288,)
                 else:
                     mean_phase = voltages.mean(axis=1)
-                hourly = mean_phase.reshape(24, 12)  # (24 hours, 12 steps)
-                x[gi, ni, :24] = hourly.mean(axis=1)
-                x[gi, ni, 24:] = hourly.std(axis=1)
+                if feature_mode == 'raw':
+                    x[gi, ni, :] = mean_phase
+                else:
+                    hourly = mean_phase.reshape(24, 12)
+                    x[gi, ni, :24] = hourly.mean(axis=1)
+                    x[gi, ni, 24:] = hourly.std(axis=1)
 
             targeted = scenario['Targeted Stations']
             for evcs_idx, evcs_name in enumerate(evcs_names_ordered):
@@ -228,11 +231,12 @@ def fit_scaler(all_x, idx_train):
 TYPE_MAP = {"Nil": 0, "Type 1": 1, "Type 2": 2, "Type 3": 3, "Type 4": 4}
 
 
-def augment_route_a(data_dict, pkl_paths):
+def augment_route_a(data_dict, pkl_paths, feature_mode='mean_std'):
     """Extend load_evcs_data output with P features and attack-type labels.
 
-    Adds keys: all_x_P [G, N, 48], all_attack_type [G], evcs_node_indices [K].
+    Adds keys: all_x_P [G, N, n_feat], all_attack_type [G], evcs_node_indices [K].
     Streams pkl files one at a time to bound peak memory.
+    feature_mode: 'mean_std' (48-dim) or 'raw' (288-dim), must match load_evcs_data.
     """
     if isinstance(pkl_paths, str):
         pkl_paths = [pkl_paths]
@@ -262,16 +266,21 @@ def augment_route_a(data_dict, pkl_paths):
                     pass
 
         n_g = len(raw_chunk)
-        x_P = np.zeros((n_g, n_nodes, 48), dtype=np.float32)
+        n_feat_p = 288 if feature_mode == 'raw' else 48
+        x_P = np.zeros((n_g, n_nodes, n_feat_p), dtype=np.float32)
         attack_types = np.zeros(n_g, dtype=np.int64)
 
         for gi, s in enumerate(raw_chunk):
             for evcs_1based, p_series in s["EVCS power series"].items():
                 idx0 = evcs_1based - 1
                 node_idx = evcs_node_indices[idx0]
-                p_arr = np.asarray(p_series, dtype=np.float32).reshape(24, 12)
-                x_P[gi, node_idx, :24] = p_arr.mean(axis=1)
-                x_P[gi, node_idx, 24:] = p_arr.std(axis=1)
+                p_arr = np.asarray(p_series, dtype=np.float32)  # (288,)
+                if feature_mode == 'raw':
+                    x_P[gi, node_idx, :] = p_arr
+                else:
+                    p_hourly = p_arr.reshape(24, 12)
+                    x_P[gi, node_idx, :24] = p_hourly.mean(axis=1)
+                    x_P[gi, node_idx, 24:] = p_hourly.std(axis=1)
             attack_types[gi] = TYPE_MAP[s["Attack Type"]]
 
         chunks_x_P.append(x_P)
@@ -302,12 +311,13 @@ def build_graphs_route_a(all_x_V, all_x_P, all_y, all_attack_type,
     n = len(idx)
     xV = all_x_V[idx]
     xP = all_x_P[idx]
-    v = scaler_V.transform(xV.reshape(n, -1)).reshape(n, n_nodes, 48).astype(np.float32)
-    p = scaler_P.transform(xP.reshape(n, -1)).reshape(n, n_nodes, 48).astype(np.float32)
+    n_feat = all_x_V.shape[2]  # per-modality feature dim (48 mean_std / 288 raw)
+    v = scaler_V.transform(xV.reshape(n, -1)).reshape(n, n_nodes, n_feat).astype(np.float32)
+    p = scaler_P.transform(xP.reshape(n, -1)).reshape(n, n_nodes, n_feat).astype(np.float32)
     x = np.concatenate([v, p], axis=2)
 
     if forget_P_at_node is not None:
-        x[:, forget_P_at_node, 48:] = 0.0
+        x[:, forget_P_at_node, n_feat:] = 0.0
 
     ds = []
     for i in range(n):

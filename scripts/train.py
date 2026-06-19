@@ -165,7 +165,7 @@ def save_results(results_all, all_logs, bus_system, data, config,
         'scenarios': {k: v['label'] for k, v in scenarios.items()},
     }
     for name in backbones:
-        m = MODEL_CLASSES[name](in_dim=data['n_feat'], hid_dim=config['hidden_dim'],
+        m = MODEL_CLASSES[name](in_dim=data['n_feat'] * 2, hid_dim=config['hidden_dim'],
                                 out_dim=config['out_dim'], n_layers=config['n_layers'],
                                 dropout=config['dropout'])
         meta['model_params'][name] = sum(p.numel() for p in m.parameters())
@@ -220,6 +220,9 @@ def main():
                         help='Override source data directory')
     parser.add_argument('--gpu', type=int, default=1,
                         help='GPU device index (default: 1)')
+    parser.add_argument('--feature', type=str, default='mean_std',
+                        choices=['mean_std', 'raw'],
+                        help='Node feature mode: mean_std (48-dim, default) or raw (288-dim)')
     args = parser.parse_args()
 
     # Device
@@ -249,11 +252,12 @@ def main():
     print(f'Output : {output_dir}')
 
     # Load data
-    data = load_evcs_data(exp['pkl_paths'], exp['gml_path'], bus_system=bus_system)
+    data = load_evcs_data(exp['pkl_paths'], exp['gml_path'], bus_system=bus_system,
+                          feature_mode=args.feature)
     config['out_dim'] = data['n_evcs']
 
     # Route A augmentation
-    data = augment_route_a(data, exp['pkl_paths'])
+    data = augment_route_a(data, exp['pkl_paths'], feature_mode=args.feature)
     scenarios = build_scenarios_route_a(exp['evcs_bus_ids'],
                                          data['evcs_node_indices'])
 
@@ -299,6 +303,8 @@ def main():
 
     # Tag for partial runs
     tag = f'{bus_system}'
+    if args.feature != 'mean_std':
+        tag += f'_{args.feature}'
     if args.backbone:
         tag += f'_{args.backbone}'
     if args.scenario:
@@ -311,8 +317,7 @@ def main():
                  scen_filter, backbones, output_dir, device, tag)
 
     print(f'\nAll outputs in: {output_dir}')
-    print(f'Visualize via:  notebooks/Viz_V6.ipynb')
-
+    print(f'Visualize via:  notebooks/Viz.ipynb')
 
 if __name__ == '__main__':
     main()

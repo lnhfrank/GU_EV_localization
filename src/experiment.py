@@ -105,7 +105,7 @@ def run_single_trial_route_a(backbone_name, scen_key, scen_val, seed,
     n_attack_types = ra.get('n_attack_types', 5)
     aux_hidden = ra.get('aux_hidden', 64)
     ig_steps = ra.get('ig_steps', 50)
-    in_dim = 96
+    in_dim = data_dict['n_feat'] * 2  # V-concat-P: each modality has n_feat dims
     lr = config['lr']
 
     print(f"\n{'='*70}")
