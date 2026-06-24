@@ -136,7 +136,7 @@ MODEL_CLASSES = {
 
 
 # ======================================================================
-#  AuxWrapper — V6.0 Route A: adds 5-way attack-type auxiliary head
+#  AuxWrapper: wraps a backbone with an attack-type auxiliary head
 # ======================================================================
 
 class AuxWrapper(nn.Module):

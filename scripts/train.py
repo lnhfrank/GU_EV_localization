@@ -3,7 +3,7 @@
 
 Hyperparameters are loaded from config/<bus_system>.yaml.
 All outputs (CSV, JSON logs) are saved to results/<YYYY-MM-DD_HH>/.
-Visualization is handled separately via notebooks/Viz_V6.ipynb.
+Visualization is handled separately via the notebooks in notebooks/.
 
 Usage:
     python train.py --bus 34bus
@@ -29,8 +29,8 @@ CONFIG_DIR = PROJECT_ROOT / 'config'
 
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.data import load_evcs_data, augment_route_a
-from src.experiment import run_single_trial_route_a
+from src.data import load_evcs_data, augment_with_power
+from src.experiment import run_single_trial
 from src.models import MODEL_CLASSES
 
 
@@ -50,7 +50,7 @@ def load_experiment(bus_system: str, source_data: Path) -> dict:
     g = cfg['gdgu']
     gi = cfg.get('gif', {})
     e = cfg['experiment']
-    ra = cfg.get('route_a', {})
+    ra = cfg.get('aux', {})
 
     # Resolve pkl_paths: support glob patterns (123-bus) and plain filenames
     raw_paths = d['pkl_paths']
@@ -92,19 +92,18 @@ def load_experiment(bus_system: str, source_data: Path) -> dict:
             # ── experiment ──
             'seeds':              e['seeds'],
             'backbones':          e['backbones'],
-            # ── route_a (V6.0) ──
-            'route_a': {
+            # ── aux ──
+            'aux': {
                 'gamma':          ra.get('gamma', 0.5),
                 'n_attack_types': ra.get('n_attack_types', 5),
                 'aux_hidden':     ra.get('aux_hidden', 64),
-                'ig_steps':       ra.get('ig_steps', 50),
             },
         },
     }
 
 
-def build_scenarios_route_a(evcs_bus_ids, evcs_node_indices):
-    """Build cumulative unlearning scenarios for Route A.
+def build_scenarios(evcs_bus_ids, evcs_node_indices):
+    """Build cumulative unlearning scenarios.
 
     Naming: S{n}, e.g. S1, S2, S3.
     """
@@ -139,9 +138,7 @@ def save_results(results_all, all_logs, bus_system, data, config,
     metric_cols = ['ExMatch', 'Hamming_Acc', 'Macro_ROC', 'Macro_F1'] \
                 + roc_cols + f1_cols \
                 + ['F1_forget', 'F1_retain', 'ROC_forget', 'ROC_retain'] \
-                + ['MIA_forget', 'MIA_retain', 'MIA_AUC', 'Time', 'Peak_Memory_MB'] \
-                + ['Aux_Acc', 'L2a_IG_mean', 'L2a_IG_std',
-                   'L2b_delta_auc', 'L2b_auc_P_present', 'L2b_auc_P_occluded']
+                + ['MIA_forget', 'MIA_retain', 'MIA_AUC', 'Time', 'Peak_Memory_MB']
     metric_cols = [c for c in metric_cols if c in df.columns]
     summary = df.groupby(['Backbone', 'Scenario', 'Method'])[metric_cols].agg(['mean', 'std']).round(4)
     sum_csv = output_dir / f'{tag}_summary.csv'
@@ -193,10 +190,6 @@ def save_results(results_all, all_logs, bus_system, data, config,
                 t = f"{sub['Time'].mean():.1f}s"
                 line = (f'    {method:10s}  ExMatch={em}  MacroROC={mr}  MacroF1={mf}  '
                         f'MIA_f={mia_f}  MIA_r={mia_r}  Time={t}')
-                if 'Aux_Acc' in sub.columns and sub['Aux_Acc'].notna().any():
-                    line += f"  AuxAcc={sub['Aux_Acc'].mean():.3f}"
-                if 'L2b_delta_auc' in sub.columns and sub['L2b_delta_auc'].notna().any():
-                    line += f"  L2b={sub['L2b_delta_auc'].mean():.4f}"
                 print(line)
 
     return df
@@ -256,9 +249,9 @@ def main():
                           feature_mode=args.feature)
     config['out_dim'] = data['n_evcs']
 
-    # Route A augmentation
-    data = augment_route_a(data, exp['pkl_paths'], feature_mode=args.feature)
-    scenarios = build_scenarios_route_a(exp['evcs_bus_ids'],
+    # Augment with P features + attack-type labels
+    data = augment_with_power(data, exp['pkl_paths'], feature_mode=args.feature)
+    scenarios = build_scenarios(exp['evcs_bus_ids'],
                                          data['evcs_node_indices'])
 
     # Print scenario summary
@@ -288,7 +281,7 @@ def main():
             for seed in seeds:
                 count += 1
                 print(f'\n[{count}/{total}]')
-                trial_results, trial_logs = run_single_trial_route_a(
+                trial_results, trial_logs = run_single_trial(
                     backbone, scen_key, scen_val, seed,
                     data, config, device)
                 results_all.extend(trial_results)

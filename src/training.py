@@ -100,7 +100,7 @@ def evaluate_model(model, loader, device):
 
 
 # ======================================================================
-#  V6.0 Route A: joint training (loc + aux attack-type) + aux eval
+#  Joint training: localization + auxiliary attack-type head
 # ======================================================================
 
 def train_model_joint(model, train_loader, val_loader, device,
@@ -164,20 +164,6 @@ def train_model_joint(model, train_loader, val_loader, device,
     if best_state is not None:
         model.load_state_dict(best_state)
     return model, best_metric, epoch_logs
-
-
-@torch.no_grad()
-def evaluate_aux_acc(model, loader, device):
-    """Attack-type auxiliary head accuracy (5-way)."""
-    model.eval()
-    correct, total = 0, 0
-    for batch in loader:
-        batch = batch.to(device)
-        logits = model.forward_aux(batch)
-        preds = logits.argmax(dim=-1)
-        correct += (preds == batch.y_type.view(-1)).sum().item()
-        total += batch.y_type.size(0)
-    return correct / max(total, 1)
 
 
 def compute_mia_auc(model, member_loader, non_member_loader, device,

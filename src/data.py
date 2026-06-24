@@ -225,13 +225,13 @@ def fit_scaler(all_x, idx_train):
 
 
 # ======================================================================
-#  V6.0 Route A: A-append data pipeline
+#  A-append data pipeline (V | P concatenated node features)
 # ======================================================================
 
 TYPE_MAP = {"Nil": 0, "Type 1": 1, "Type 2": 2, "Type 3": 3, "Type 4": 4}
 
 
-def augment_route_a(data_dict, pkl_paths, feature_mode='mean_std'):
+def augment_with_power(data_dict, pkl_paths, feature_mode='mean_std'):
     """Extend load_evcs_data output with P features and attack-type labels.
 
     Adds keys: all_x_P [G, N, n_feat], all_attack_type [G], evcs_node_indices [K].
@@ -299,11 +299,11 @@ def augment_route_a(data_dict, pkl_paths, feature_mode='mean_std'):
     return data_dict
 
 
-def build_graphs_route_a(all_x_V, all_x_P, all_y, all_attack_type,
+def build_graphs(all_x_V, all_x_P, all_y, all_attack_type,
                           edge_index, n_nodes, idx,
                           scaler_V, scaler_P,
                           forget_P_at_node=None):
-    """Build PyG Data list for Route A (A-append [V_48|P_48], optional P zeroing).
+    """Build PyG Data list (A-append [V | P], optional P zeroing).
 
     Args:
         forget_P_at_node: if int, zero dims 48:96 at this node for every graph.

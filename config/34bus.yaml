@@ -38,8 +38,7 @@ gif:                       # GIF & IDEA shared hyperparameters
 experiment:
   seeds:     [42, 43, 44, 45, 46, 47, 48, 49, 50, 51]
   backbones: [GAT, GCN, GIN]
-route_a:                         # V6.0: single-head + aux attack-type head
+aux:                             # single-head GNN + attack-type auxiliary head
   gamma:            0.5          # aux loss weight: L = L_loc + gamma * L_type
   n_attack_types:   5            # Nil + 4 attack types
   aux_hidden:       64           # aux head hidden dim
-  ig_steps:         50           # Integrated Gradients steps (production)

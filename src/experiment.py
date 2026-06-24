@@ -1,4 +1,4 @@
-"""Experiment runner: Route A trial (one backbone x scenario x seed)."""
+"""Experiment runner: one trial (one backbone x scenario x seed)."""
 
 import copy
 import time
@@ -10,14 +10,12 @@ import torch.nn as nn
 from torch_geometric.loader import DataLoader
 
 from src.models import MODEL_CLASSES, AuxWrapper
-from src.data import (build_graphs_route_a,
+from src.data import (build_graphs,
                       stratified_split_multilabel, fit_scaler)
 from src.training import (kaiming_init, get_pos_weights,
                           train_model_joint, evaluate_model,
-                          evaluate_aux_acc, compute_mia_auc)
+                          compute_mia_auc)
 from src.unlearning import gdgu_feature_unlearn, gif_unlearn, idea_unlearn
-from src.privacy import (L2_a_integrated_gradients,
-                         L2_b_occlusion_delta_auc)
 
 
 def _peak_memory_mb(device):
@@ -72,18 +70,17 @@ def _build_result(backbone, scenario, seed, method, eval_dict, mia_dict,
     return row
 
 
-def run_single_trial_route_a(backbone_name, scen_key, scen_val, seed,
+def run_single_trial(backbone_name, scen_key, scen_val, seed,
                               data_dict, config, device):
-    """Route A trial: Original + GDGU + GIF + IDEA + Retrain-A with L2 privacy.
+    """Run one trial: Original + GDGU + GIF + IDEA + Retrain.
 
     Uses AuxWrapper for joint loc + attack-type training. Unlearning methods
-    operate on the loc head only (aux head is frozen). Privacy evaluation
-    includes L1 (utility), L2-a (IG), L2-b (occlusion delta-AUC), L2-e
-    (aux acc), and MIA.
+    operate on the loc head only (aux head is frozen). Reports utility
+    (Macro ROC-AUC / F1), forgetting privacy (MIA-AUC), and efficiency.
 
     Args:
-        data_dict: output of load_evcs_data + augment_route_a.
-        config: flat dict with training/gdgu/gif/route_a parameters.
+        data_dict: output of load_evcs_data + augment_with_power.
+        config: flat dict with training/gdgu/gif/aux parameters.
 
     Returns:
         list of 5 result dicts, dict of epoch_logs.
@@ -100,16 +97,15 @@ def run_single_trial_route_a(backbone_name, scen_key, scen_val, seed,
     n_nodes = data_dict['n_nodes']
     n_evcs = data_dict['n_evcs']
 
-    ra = config.get('route_a', {})
+    ra = config.get('aux', {})
     gamma = ra.get('gamma', 0.5)
     n_attack_types = ra.get('n_attack_types', 5)
     aux_hidden = ra.get('aux_hidden', 64)
-    ig_steps = ra.get('ig_steps', 50)
     in_dim = data_dict['n_feat'] * 2  # V-concat-P: each modality has n_feat dims
     lr = config['lr']
 
     print(f"\n{'='*70}")
-    print(f"  [Route A] {backbone_name} | {scen_label} | seed={seed}")
+    print(f"  [Trial] {backbone_name} | {scen_label} | seed={seed}")
     print(f"{'='*70}")
 
     torch.manual_seed(seed)
@@ -135,7 +131,7 @@ def run_single_trial_route_a(backbone_name, scen_key, scen_val, seed,
     bs = config['batch_size']
 
     def _bg(idx, forget=None):
-        return build_graphs_route_a(
+        return build_graphs(
             all_x_V, all_x_P, all_y, all_attack_type,
             edge_index, n_nodes, idx, scaler_V, scaler_P,
             forget_P_at_node=forget)
@@ -171,16 +167,9 @@ def run_single_trial_route_a(backbone_name, scen_key, scen_val, seed,
         kaiming_init(model)
         return model
 
-    def _eval_l2(model, native_test_loader):
-        """Compute L1 + L2 metrics for a given model."""
-        res = evaluate_model(model, native_test_loader, device)
-        aux = evaluate_aux_acc(model, native_test_loader, device)
-        l2a = L2_a_integrated_gradients(
-            model, test_loader, forget_node_indices, forget_label_idx,
-            n_nodes, device, n_steps=ig_steps)
-        l2b = L2_b_occlusion_delta_auc(
-            model, test_loader, test_loader_occ, device)
-        return res, aux, l2a, l2b
+    def _eval(model, native_test_loader):
+        """Compute L1 utility metrics for a given model."""
+        return evaluate_model(model, native_test_loader, device)
 
     # ── (A) Original: joint training on full data ──
     model_orig = _make_model()
@@ -196,17 +185,15 @@ def run_single_trial_route_a(backbone_name, scen_key, scen_val, seed,
     mem_orig = _peak_memory_mb(device)
     all_epoch_logs['Original'] = logs_orig
 
-    res_o, aux_o, l2a_o, l2b_o = _eval_l2(model_orig, test_loader)
+    res_o = _eval(model_orig, test_loader)
     mia_orig = {'mia_forget': np.nan, 'mia_retain': np.nan, 'mia_overall': np.nan}
     print(f"  [Original]  ExMatch={res_o['exact_match']:.4f}  "
           f"MacroROC={res_o['macro_roc']:.4f}  MacroF1={res_o['macro_f1']:.4f}  "
-          f"AuxAcc={aux_o:.4f}  L2b={l2b_o['delta_auc']:.4f}  "
           f"Time={time_orig:.1f}s  Mem={mem_orig:.1f}MB")
-    results.append(_build_result_route_a(
+    results.append(_build_result(
         backbone_name, scen_key, seed, 'Original',
         res_o, mia_orig, time_orig, mem_orig,
-        forget_label_idx=forget_label_idx,
-        aux_acc=aux_o, l2a=l2a_o, l2b=l2b_o))
+        forget_label_idx=forget_label_idx))
 
     # ── (B) GDGU ──
     model_gdgu = copy.deepcopy(model_orig)
@@ -223,19 +210,17 @@ def run_single_trial_route_a(backbone_name, scen_key, scen_val, seed,
     time_gdgu = time.time() - t0
     mem_gdgu = _peak_memory_mb(device)
 
-    res_g, aux_g, l2a_g, l2b_g = _eval_l2(model_gdgu, test_loader_occ)
+    res_g = _eval(model_gdgu, test_loader_occ)
     mia_gdgu = compute_mia_auc(model_gdgu, train_loader_occ, test_loader_occ,
                                 device, pw, forget_label_idx=forget_label_idx)
     print(f"  [GDGU]      ExMatch={res_g['exact_match']:.4f}  "
           f"MacroROC={res_g['macro_roc']:.4f}  MacroF1={res_g['macro_f1']:.4f}  "
-          f"AuxAcc={aux_g:.4f}  L2b={l2b_g['delta_auc']:.4f}  "
           f"MIA_f={mia_gdgu['mia_forget']:.4f}  "
           f"Time={time_gdgu:.1f}s  Mem={mem_gdgu:.1f}MB")
-    results.append(_build_result_route_a(
+    results.append(_build_result(
         backbone_name, scen_key, seed, 'GDGU',
         res_g, mia_gdgu, time_gdgu, mem_gdgu,
-        forget_label_idx=forget_label_idx,
-        aux_acc=aux_g, l2a=l2a_g, l2b=l2b_g))
+        forget_label_idx=forget_label_idx))
 
     # ── (C) GIF ──
     model_gif = copy.deepcopy(model_orig)
@@ -253,19 +238,17 @@ def run_single_trial_route_a(backbone_name, scen_key, scen_val, seed,
     time_gif = time.time() - t0
     mem_gif = _peak_memory_mb(device)
 
-    res_gif, aux_gif, l2a_gif, l2b_gif = _eval_l2(model_gif, test_loader_occ)
+    res_gif = _eval(model_gif, test_loader_occ)
     mia_gif = compute_mia_auc(model_gif, train_loader_occ, test_loader_occ,
                                device, pw, forget_label_idx=forget_label_idx)
     print(f"  [GIF]       ExMatch={res_gif['exact_match']:.4f}  "
           f"MacroROC={res_gif['macro_roc']:.4f}  MacroF1={res_gif['macro_f1']:.4f}  "
-          f"AuxAcc={aux_gif:.4f}  L2b={l2b_gif['delta_auc']:.4f}  "
           f"MIA_f={mia_gif['mia_forget']:.4f}  "
           f"Time={time_gif:.1f}s  Mem={mem_gif:.1f}MB")
-    results.append(_build_result_route_a(
+    results.append(_build_result(
         backbone_name, scen_key, seed, 'GIF',
         res_gif, mia_gif, time_gif, mem_gif,
-        forget_label_idx=forget_label_idx,
-        aux_acc=aux_gif, l2a=l2a_gif, l2b=l2b_gif))
+        forget_label_idx=forget_label_idx))
 
     # ── (D) IDEA ──
     model_idea = copy.deepcopy(model_orig)
@@ -286,21 +269,19 @@ def run_single_trial_route_a(backbone_name, scen_key, scen_val, seed,
     time_idea = time.time() - t0
     mem_idea = _peak_memory_mb(device)
 
-    res_idea, aux_idea, l2a_idea, l2b_idea = _eval_l2(model_idea, test_loader_occ)
+    res_idea = _eval(model_idea, test_loader_occ)
     mia_idea = compute_mia_auc(model_idea, train_loader_occ, test_loader_occ,
                                 device, pw, forget_label_idx=forget_label_idx)
     print(f"  [IDEA]      ExMatch={res_idea['exact_match']:.4f}  "
           f"MacroROC={res_idea['macro_roc']:.4f}  MacroF1={res_idea['macro_f1']:.4f}  "
-          f"AuxAcc={aux_idea:.4f}  L2b={l2b_idea['delta_auc']:.4f}  "
           f"MIA_f={mia_idea['mia_forget']:.4f}  "
           f"Time={time_idea:.1f}s  Mem={mem_idea:.1f}MB")
-    results.append(_build_result_route_a(
+    results.append(_build_result(
         backbone_name, scen_key, seed, 'IDEA',
         res_idea, mia_idea, time_idea, mem_idea,
-        forget_label_idx=forget_label_idx,
-        aux_acc=aux_idea, l2a=l2a_idea, l2b=l2b_idea))
+        forget_label_idx=forget_label_idx))
 
-    # ── (E) Retrain-A: joint training on occluded data ──
+    # ── (E) Retrain: joint training on occluded data ──
     torch.manual_seed(seed)
     np.random.seed(seed)
     if torch.cuda.is_available():
@@ -319,49 +300,23 @@ def run_single_trial_route_a(backbone_name, scen_key, scen_val, seed,
     mem_retrain = _peak_memory_mb(device)
     all_epoch_logs['Retrain'] = logs_rt
 
-    res_r, aux_r, l2a_r, l2b_r = _eval_l2(model_retrain, test_loader_occ)
+    res_r = _eval(model_retrain, test_loader_occ)
     mia_retrain = compute_mia_auc(model_retrain, train_loader_occ, test_loader_occ,
                                    device, pw, forget_label_idx=forget_label_idx)
-    print(f"  [Retrain-A] ExMatch={res_r['exact_match']:.4f}  "
+    print(f"  [Retrain]   ExMatch={res_r['exact_match']:.4f}  "
           f"MacroROC={res_r['macro_roc']:.4f}  MacroF1={res_r['macro_f1']:.4f}  "
-          f"AuxAcc={aux_r:.4f}  L2b={l2b_r['delta_auc']:.4f}  "
           f"MIA_f={mia_retrain['mia_forget']:.4f}  "
           f"Time={time_retrain:.1f}s  Mem={mem_retrain:.1f}MB")
     print(f"  Speedup vs Retrain: "
           f"GDGU {time_retrain / max(time_gdgu, 1e-6):.1f}x  "
           f"GIF {time_retrain / max(time_gif, 1e-6):.1f}x  "
           f"IDEA {time_retrain / max(time_idea, 1e-6):.1f}x")
-    results.append(_build_result_route_a(
+    results.append(_build_result(
         backbone_name, scen_key, seed, 'Retrain',
         res_r, mia_retrain, time_retrain, mem_retrain,
-        forget_label_idx=forget_label_idx,
-        aux_acc=aux_r, l2a=l2a_r, l2b=l2b_r))
+        forget_label_idx=forget_label_idx))
 
     del model_orig, model_gdgu, model_gif, model_idea, model_retrain
     torch.cuda.empty_cache()
 
     return results, all_epoch_logs
-
-
-def _build_result_route_a(backbone, scenario, seed, method, eval_dict, mia_dict,
-                           elapsed, mem_mb, forget_label_idx=None,
-                           aux_acc=None, l2a=None, l2b=None):
-    """Flat result dict for Route A trial (adds L2 privacy metrics)."""
-    row = _build_result(backbone, scenario, seed, method, eval_dict, mia_dict,
-                        elapsed, mem_mb, forget_label_idx=forget_label_idx)
-    row['Aux_Acc'] = float(aux_acc) if aux_acc is not None else np.nan
-    if l2a is not None:
-        row['L2a_IG_mean'] = l2a['mean']
-        row['L2a_IG_std'] = l2a['std']
-    else:
-        row['L2a_IG_mean'] = np.nan
-        row['L2a_IG_std'] = np.nan
-    if l2b is not None:
-        row['L2b_delta_auc'] = l2b['delta_auc']
-        row['L2b_auc_P_present'] = l2b['auc_P_present']
-        row['L2b_auc_P_occluded'] = l2b['auc_P_occluded']
-    else:
-        row['L2b_delta_auc'] = np.nan
-        row['L2b_auc_P_present'] = np.nan
-        row['L2b_auc_P_occluded'] = np.nan
-    return row
