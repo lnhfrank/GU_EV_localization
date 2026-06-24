@@ -15,7 +15,7 @@ Charging manipulation attacks (CMAs) on electric vehicle charging stations (EVCS
 <p align="center">
   <img src="figures/framework.png" width="900" alt="GDGU framework for EVCS cyberattack localization">
 </p>
-<p align="center"><em>Framework of GDGU for EVCS cyberattack localization.</em></p>
+<p align="center"><em>The Framework of GDGU for EVCS cyberattack localization.</em></p>
 
 ### Methods compared
 
@@ -59,7 +59,7 @@ Raw data is **not tracked by Git**. Source: the EVCS cyberattack dataset of the 
 | Unlearning scenarios | S1–S3 | S1–S5 | S1–S7 |
 | Backbones | GAT, GCN, GIN | GAT, GCN, GIN | GCN, GIN |
 
-**Feature construction:** each node feature concatenates a voltage block and a charging power block, $\mathbf{x}_v = [\mathbf{v}_v \,\|\, \mathbf{p}_v] \in \mathbb{R}^{96}$, where each block stacks the 24 hourly means and 24 hourly standard deviations over the daily snapshot. $P$ is nonzero only at EVCS buses. $V$ and $P$ are standardized with separate scalers fit on the training set.
+**Feature construction:** each node feature concatenates a voltage block and a charging power block, $\mathbf{x}_v = [\mathbf{v}_v \,\|\, \mathbf{p}_v] \in \mathbb{R}^{576}$, where each block stacks the 288 five-minute samples spanning the 24-hour daily snapshot. $P$ is nonzero only at EVCS buses. $V$ and $P$ are standardized with separate scalers fit on the training set.
 
 ---
 
@@ -72,7 +72,7 @@ Raw data is **not tracked by Git**. Source: the EVCS cyberattack dataset of the 
 | Optimizer | Adam, lr $10^{-4}$, weight decay $10^{-4}$ |
 | Hidden dim / layers / dropout | 128 / 3 / 0.3 |
 | GDGU $\lambda$ / $\rho$ / $E_{\text{ft}}$ | 0.1 / 1.0 / 25 |
-| GIF & IDEA $T$ / $\beta$ / $s$ | 50 / 0.01 / 50 |
+| GIF & IDEA $T$ / $\beta$ / $s$ | 50 / 0.05 / 200 |
 
 **Metrics:** macro ROC-AUC and F1 over the $K$ EVCS buses (utility); loss-based MIA restricted to the forgotten labels, where MIA-AUC closer to 0.5 indicates stronger forgetting (privacy); unlearning time and peak GPU memory (efficiency).
 
@@ -84,4 +84,4 @@ Raw data is **not tracked by Git**. Source: the EVCS cyberattack dataset of the 
 - J. Wu et al. "GIF: A General Graph Unlearning Strategy via Influence Function." *WWW 2023*.
 - Y. Dong et al. "IDEA: A Flexible Framework of Certified Unlearning for Graph Neural Networks." *KDD 2024*.
 - B. Fan et al. "OpenGU: A Comprehensive Benchmark for Graph Unlearning." 2025.
-- B. Wu et al. "Adapting Membership Inference Attacks to GNN for Graph Classification." *ICDM 2021*.
+
