@@ -14,11 +14,11 @@ Thumbs.db
 scripts/*.sbatch
 notebooks/GDGU_EV_loc_*.ipynb
 notebooks/Privacy_Radius_Analysis.ipynb
-scripts/smoke_A/
-scripts/smoke_test.py
 Paper*/
 Version.md
 notebooks/Viz_loc_*.ipynb
 notebooks/Viz_loc_V6.ipynb
 notebooks/Viz_V7_ITSG.ipynb
 !notebooks/Viz_loc_V9.ipynb
+GDGU_EV_notes.md
+GDGU_EV_notes.pdf
