@@ -1,8 +1,8 @@
-# GDGU: Gradient Difference-based Graph Unlearning for Cyberattack Localization in Electric Vehicle Charging Networks
+# What Graph Unlearning Cannot Erase: Physics-Induced Leakage of Cyberattack Information in Electric Vehicle Charging Networks
 
 Code for the paper:
 
-> N. Liu, M. Sun, and J. Zhang, "GDGU: A Gradient Difference-based Graph Unlearning Method for Cyberattack Localization in Electric Vehicle Charging Networks," submitted to *IEEE Transactions on Smart Grid*, 2026.
+> N. Liu, M. Sun, and J. Zhang, "What Graph Unlearning Cannot Erase: Physics-Induced Leakage of Cyberattack Information in Electric Vehicle Charging Networks," submitted to *IEEE Transactions on Smart Grid*, 2026.
 
 ---
 
