@@ -45,7 +45,7 @@ pip install -r requirements.txt
 
 ## Data
 
-Raw data is **not tracked by Git**. Source: the EVCS cyberattack dataset of the [PowerBench benchmark](https://zenodo.org/records/15401290) (Jacob et al., 2025).
+Raw data is **not tracked by Git**. Source: the EVCS cyberattack dataset of the [PowerBench benchmark](https://zenodo.org/records/15401290) (Uddin et al., 2026).
 
 | | 34-bus | 123-bus | 8500-node |
 |---|---|---|---|
@@ -61,7 +61,7 @@ Each node feature stacks the 288 five-minute samples of the bus voltage and of t
 
 ## References
 
-- R. A. Jacob, M. J. Uddin, D. R. Olojede, B. Coskunuzer, and J. Zhang. "PowerBench: A Benchmark Suite for Monitoring and Security in Distribution Systems." 2025. DOI: [10.5281/zenodo.15401290](https://zenodo.org/records/15401290)
+- M. J. Uddin, R. A. Jacob, D. R. Olojede, N. Liu, B. Coskunuzer, and J. Zhang. "PowerBench: A Benchmark Suite for Monitoring and Security in Distribution Systems." *Journal of Data-centric Machine Learning Research*, 2026. Dataset: [10.5281/zenodo.15401290](https://zenodo.org/records/15401290)
 - J. Wu et al. "GIF: A General Graph Unlearning Strategy via Influence Function." *WWW 2023*.
 - Y. Dong et al. "IDEA: A Flexible Framework of Certified Unlearning for Graph Neural Networks." *KDD 2024*.
 - B. Fan et al. "OpenGU: A Comprehensive Benchmark for Graph Unlearning." 2025.
