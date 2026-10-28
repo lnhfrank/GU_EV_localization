@@ -4,32 +4,30 @@ Code for the paper:
 
 > N. Liu, M. Sun, and J. Zhang, "What Graph Unlearning Cannot Erase: Physics-Induced Leakage of Cyberattack Information in Electric Vehicle Charging Networks," submitted to *IEEE Transactions on Smart Grid*, 2026.
 
+The code on `main` is the version of the first submission.
+
 ---
 
 ## Overview
 
-Charging manipulation attacks (CMAs) on electric vehicle charging stations (EVCSs) alter charging profiles and, through the power flow, the bus voltages of a distribution feeder. This project addresses **EVCS cyberattack localization** as a **graph-level multi-label classification** task: given a daily feeder snapshot with bus voltage and charging power features, predict which EVCS buses are under attack.
+A graph neural network (GNN) localizes charge manipulation attacks on electric vehicle charging stations (EVCSs) from daily feeder snapshots, as graph-level multi-label classification over the EVCS buses. The distribution system operator (DSO) keeps the bus voltages, and each EVCS operator can withdraw the charging power it shares. A withdrawal zeros the charging power at the requested stations and keeps the voltages and the topology, which makes it a feature-level graph unlearning problem. Scenarios $\mathrm{S}_1, \dots, \mathrm{S}_K$ withdraw the first $j$ stations.
 
-**Unlearning is formulated under split data ownership:** the DSO owns bus voltage $V$ on every bus (never revoked), while each EVCS operator owns the charging power $P$ at its own station — the only revokable modality. A forget request is realized as **feature-level unlearning**: the charging power block at the requested buses is zeroed, while voltage features and graph topology remain intact. Cumulative scenarios $\mathrm{S}_1, \dots, \mathrm{S}_K$ forget the first $j$ EVCS buses as deletion requests accumulate.
+The withdrawal leaves a **physical leakage floor**. An attack shifts the voltages of electrically coupled buses, so a GNN retrained without the withdrawn power still localizes attacks at the forgotten stations well above random guessing. Each unlearning method is therefore compared with a second retraining under another seed rather than with random guessing.
 
 <p align="center">
-  <img src="figures/framework.png" width="900" alt="GDGU framework for EVCS cyberattack localization">
+  <img src="figures/framework.png" width="900" alt="Graph unlearning for EVCS cyberattack localization">
 </p>
-<p align="center"><em>The Framework of GDGU for EVCS cyberattack localization.</em></p>
-
-### Methods compared
+<p align="center"><em>The framework of graph unlearning for EVCS cyberattack localization.</em></p>
 
 | Method | Approach |
 |---|---|
-| **Original** | Trained model before any forgetting (reference) |
-| **Retrain** | Full retraining from scratch on the modified data (gold standard) |
-| **GDGU** (ours) | First-order gradient-difference correction $\Delta\theta = \Delta\mathbf{g}/\lambda$ with norm clip $\rho$ → BatchNorm recalibration → recovery fine-tuning |
-| **GIF** | Second-order influence correction via truncated Neumann series (Hessian-vector products) |
-| **IDEA** | Second-order certified correction + recovery fine-tuning |
+| **Original** | Model trained on the full data |
+| **Full retraining (FR)** | Training from scratch on the modified data |
+| **Fine-tuning (FT)** | Continued training of the original model on the modified data, for 10, 25, 50, or 100 epochs or to convergence |
+| **GIF** | Influence-function update with Hessian-vector products |
+| **IDEA** | Certified influence-function update |
 
-### Model
-
-Three GNN backbones with a shared architecture: **GCN, GAT, GIN** — 3 convolution layers with batch normalization and dropout, mean+max dual pooling, 2-layer localization head, plus an auxiliary attack-type head trained jointly ($\mathcal{L} = \mathcal{L}_{\text{loc}} + 0.5\,\mathcal{L}_{\text{type}}$).
+The backbones are GCN, GAT, and GIN, each with three convolution layers, mean and max pooling, a localization head, and an auxiliary attack-type head.
 
 ---
 
@@ -56,25 +54,10 @@ Raw data is **not tracked by Git**. Source: the EVCS cyberattack dataset of the 
 | Buses $N$ / lines $M$ | 37 / 36 | 132 / 131 | 4,876 / 4,874 |
 | Graph instances | 2,000 | 4,000 | 1,000 |
 | EVCS buses $K$ | 3 | 5 | 7 |
-| Unlearning scenarios | S1–S3 | S1–S5 | S1–S7 |
+| Unlearning scenarios | S1–S3 | S1–S5 | S1, S7 |
 | Backbones | GAT, GCN, GIN | GAT, GCN, GIN | GCN, GIN |
 
-**Feature construction:** each node feature concatenates a voltage block and a charging power block, $\mathbf{x}_v = [\mathbf{v}_v \,\|\, \mathbf{p}_v] \in \mathbb{R}^{576}$, where each block stacks the 288 five-minute samples spanning the 24-hour daily snapshot. $P$ is nonzero only at EVCS buses. $V$ and $P$ are standardized with separate scalers fit on the training set.
-
----
-
-## Experiment Design
-
-| Parameter | Value |
-|---|---|
-| Split | 70 / 15 / 15|
-| Seeds | 10 |
-| Optimizer | Adam, lr $10^{-4}$, weight decay $10^{-4}$ |
-| Hidden dim / layers / dropout | 128 / 3 / 0.3 |
-| GDGU $\lambda$ / $\rho$ / $E_{\text{ft}}$ | 0.1 / 1.0 / 25 |
-| GIF & IDEA $T$ / $\beta$ / $s$ | 50 / 0.05 / 200 |
-
-**Metrics:** macro ROC-AUC and F1 over the $K$ EVCS buses (utility); loss-based MIA restricted to the forgotten labels, where MIA-AUC closer to 0.5 indicates stronger forgetting (privacy); unlearning time and peak GPU memory (efficiency).
+Each node feature stacks the 288 five-minute samples of the bus voltage and of the charging power over the day, $\mathbf{x}_v \in \mathbb{R}^{576}$. The charging power is nonzero only at EVCS buses, and both parts are standardized with scalers fit on the training set.
 
 ---
 
@@ -84,4 +67,3 @@ Raw data is **not tracked by Git**. Source: the EVCS cyberattack dataset of the 
 - J. Wu et al. "GIF: A General Graph Unlearning Strategy via Influence Function." *WWW 2023*.
 - Y. Dong et al. "IDEA: A Flexible Framework of Certified Unlearning for Graph Neural Networks." *KDD 2024*.
 - B. Fan et al. "OpenGU: A Comprehensive Benchmark for Graph Unlearning." 2025.
-
