@@ -4,8 +4,6 @@ Code for the paper:
 
 > N. Liu, M. Sun, and J. Zhang, "What Graph Unlearning Cannot Erase: Physics-Induced Leakage of Cyberattack Information in Electric Vehicle Charging Networks," submitted to *IEEE Transactions on Smart Grid*, 2026.
 
-The code on `main` is the version of the first submission.
-
 ---
 
 ## Overview
