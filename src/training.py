@@ -103,14 +103,45 @@ def evaluate_model(model, loader, device):
 #  Joint training: localization + auxiliary attack-type head
 # ======================================================================
 
+class EarlyStopper:
+    """Patience-based early stopping on a metric that should increase.
+
+    The best checkpoint follows any increase of the metric, while the patience
+    counter resets only when the metric beats the value at the last reset by
+    more than min_delta. With min_delta=0 both happen on any increase, which is
+    the rule of the submitted code.
+    """
+
+    def __init__(self, patience, min_delta=0.0):
+        self.patience = patience
+        self.min_delta = min_delta
+        self.best = 0.0
+        self.ref = 0.0
+        self.wait = 0
+
+    def step(self, metric):
+        """Record one epoch; return (is_best, stop)."""
+        is_best = metric > self.best
+        if is_best:
+            self.best = metric
+        if metric > self.ref + self.min_delta:
+            self.ref = metric
+            self.wait = 0
+            return is_best, False
+        self.wait += 1
+        return is_best, self.wait >= self.patience
+
+
 def train_model_joint(model, train_loader, val_loader, device,
                       epochs=200, lr=5e-4, weight_decay=1e-4, patience=30,
                       pos_weights=None, type_weights=None, gamma=0.5,
-                      verbose=False, scheduler_patience=20):
+                      verbose=False, scheduler_patience=20, min_delta=0.0):
     """Joint training: L = BCE(loc) + gamma * CE(attack_type).
 
     model must expose forward_both(data) -> (loc_logits, type_logits).
-    Monitors val macro-ROC on localization for early stopping.
+    Monitors val macro-ROC on localization for early stopping, see
+    EarlyStopper; min_delta=0 reproduces the submitted rule. When training
+    stops before `epochs`, the last epoch log carries 'stopped_early': True.
     """
     from torch.optim.lr_scheduler import ReduceLROnPlateau
 
@@ -121,9 +152,8 @@ def train_model_joint(model, train_loader, val_loader, device,
     crit_type = nn.CrossEntropyLoss(
         weight=type_weights) if type_weights is not None else nn.CrossEntropyLoss()
 
-    best_metric = 0.0
+    stopper = EarlyStopper(patience, min_delta)
     best_state = None
-    wait = 0
     epoch_logs = []
 
     for epoch in range(1, epochs + 1):
@@ -150,20 +180,18 @@ def train_model_joint(model, train_loader, val_loader, device,
             'val_roc': round(val_metric, 6),
         })
 
-        if val_metric > best_metric:
-            best_metric = val_metric
+        is_best, stop = stopper.step(val_metric)
+        if is_best:
             best_state = copy.deepcopy(model.state_dict())
-            wait = 0
-        else:
-            wait += 1
-            if wait >= patience:
-                if verbose:
-                    print(f"  Early stop at epoch {epoch}, best val macro-ROC={best_metric:.4f}")
-                break
+        if stop:
+            epoch_logs[-1]['stopped_early'] = True
+            if verbose:
+                print(f"  Early stop at epoch {epoch}, best val macro-ROC={stopper.best:.4f}")
+            break
 
     if best_state is not None:
         model.load_state_dict(best_state)
-    return model, best_metric, epoch_logs
+    return model, stopper.best, epoch_logs
 
 
 def compute_mia_auc(model, member_loader, non_member_loader, device,

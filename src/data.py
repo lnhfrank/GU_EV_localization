@@ -299,25 +299,54 @@ def augment_with_power(data_dict, pkl_paths, feature_mode='mean_std'):
     return data_dict
 
 
+# How the charging power of the forgotten stations is removed (E10, R1-B4)
+FORGET_SEMANTICS = ('zero_std', 'zero_raw', 'mask')
+
+
 def build_graphs(all_x_V, all_x_P, all_y, all_attack_type,
                           edge_index, n_nodes, idx,
                           scaler_V, scaler_P,
-                          forget_P_at_node=None):
+                          forget_P_at_node=None, forget_semantics='zero_std', mask_channel=False):
     """Build PyG Data list (A-append [V | P], optional P zeroing).
 
     Args:
-        forget_P_at_node: if int, zero dims 48:96 at this node for every graph.
+        forget_P_at_node: node index or list of node indices whose charging
+            power is removed in every graph.
+        forget_semantics: how it is removed (E10). 'zero_std', the submitted
+            operation, sets the standardized power to zero, the training mean
+            of each column; 'zero_raw' sets the raw power to zero, an idle
+            station, and standardizes it with scaler_P, which gives very large
+            values in the columns whose training spread is near zero (on the
+            34-bus and 123-bus feeders 85 to 125 of the 288 steps of a station
+            have a standard deviation below 1e-3 kW, and the standardized zero
+            reaches -8e8); 'mask' removes it as 'zero_std' does, for a run whose
+            graphs carry the mask channel.
+        mask_channel: append one channel that is 1 at forget_P_at_node and 0
+            elsewhere, so a model can tell a withdrawn power from a measured
+            one; a run with 'mask' builds every graph with it, also the graphs
+            that keep their power.
     """
+    if forget_semantics not in FORGET_SEMANTICS:
+        raise ValueError(f"forget_semantics must be one of {list(FORGET_SEMANTICS)}, "
+                         f"got {forget_semantics!r}")
     n = len(idx)
     xV = all_x_V[idx]
     xP = all_x_P[idx]
+    if forget_P_at_node is not None and forget_semantics == 'zero_raw':
+        xP = xP.copy()
+        xP[:, forget_P_at_node, :] = 0.0
     n_feat = all_x_V.shape[2]  # per-modality feature dim (48 mean_std / 288 raw)
     v = scaler_V.transform(xV.reshape(n, -1)).reshape(n, n_nodes, n_feat).astype(np.float32)
     p = scaler_P.transform(xP.reshape(n, -1)).reshape(n, n_nodes, n_feat).astype(np.float32)
     x = np.concatenate([v, p], axis=2)
 
-    if forget_P_at_node is not None:
+    if forget_P_at_node is not None and forget_semantics != 'zero_raw':
         x[:, forget_P_at_node, n_feat:] = 0.0
+    if mask_channel:
+        mask = np.zeros((n, n_nodes, 1), dtype=np.float32)
+        if forget_P_at_node is not None:
+            mask[:, forget_P_at_node, 0] = 1.0
+        x = np.concatenate([x, mask], axis=2)
 
     ds = []
     for i in range(n):

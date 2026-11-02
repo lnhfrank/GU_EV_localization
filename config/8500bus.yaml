@@ -7,26 +7,36 @@
 
 data:
   bus_system: "8500bus"
+  feature_mode: raw   # node features: 'raw' (288-d per channel, the revision) or 'mean_std' (48-d, reproduces the submitted runs); --feature overrides
   pkl_paths: "8500_bus/EVCSAttacks_8500_job*_merged.pkl.gz"  # glob, streamed pickle
   gml_path:  "8500_bus/8500busEx.gml"
   evcs_bus_ids: [l3104136, l2895449, l3010560, l2876797, l2876814, l3081380, l2766718]
+  voltage_noise_snr_db: null   # E9: SNR in dB of white Gaussian noise on the bus voltages, one reference level per feeder (src/noise.py); null adds none; --voltage-noise-db overrides
+  withdraw_fraction: 1.0   # E5: fraction of the training graphs whose forgotten charging power is withdrawn; validation and test keep it below 1.0; --withdraw-fraction overrides
 
 training:
   test_size:         0.30
   val_ratio:         0.50
-  epochs:            300
+  epochs:            3000    # cap, raised from 600 as on the 34-bus and 123-bus feeders, so that early stopping ends every run; 300 with min_delta 0 reproduces the submitted runs
   batch_size:        64
   lr:                1.0e-4
   weight_decay:      1.0e-4
   patience:          50
+  min_delta:         1.0e-4  # patience resets only on a gain above this; best checkpoint still follows any gain
   scheduler_patience: 20
   hidden_dim:        128
   n_layers:          3
   dropout:           0.3
+  readout:           station    # 'station' scores each EVCS from its own bus, used on all feeders; 'dual_pool' is the submitted mean + max pooling
 
 gdgu:
   damp:            0.1
   max_norm:        1.0
+  sign:            descent  # 'descent' moves against delta_g; 'submitted' reproduces the submitted +delta_g
+  step:            fixed  # 'fixed' moves rho along -delta_g/||delta_g||; 'line_search' picks the length from line_search_grid; 'clip' reproduces the submitted delta_g/lambda capped at norm rho
+  line_search_grid: [0.01, 0.03, 0.1, 0.3, 1.0]  # candidate step lengths for step: line_search
+  grad_mode:       eval   # gradient passes: 'eval' without dropout and without touching BN buffers; 'train' reproduces the submitted code
+  bn_recal:        cumulative  # BN recalibration: 'cumulative' averages batch statistics with equal weight; 'momentum' reproduces the submitted momentum-0.1 average
   finetune_epochs: 25
   finetune_lr:     1.0e-4
 
@@ -35,12 +45,49 @@ gif:
   damp:            0.05    # raised for raw 576d stability (was 0.01)
   scale:           200.0   # raised for raw 576d larger lambda_max (was 50.0)
   idea_finetune:   25
-  max_batches:     4      # 36% of 11 total batches (train=700, bs=64)
+  max_batches:     null    # all 11 training batches (train=700, bs=64), as in E3; 4 reproduces the submitted runs, a memory limit that the per-batch HVP removed
+  grad_mode:       eval   # gradient passes of GIF and IDEA, same meaning as gdgu.grad_mode
+  bn_recal:        cumulative  # BN recalibration of GIF and IDEA, same meaning as gdgu.bn_recal
+  hvp:             per_batch   # Hessian-vector products one batch at a time; 'full' reproduces the submitted graph over all max_batches batches
+  # IDEA noise bound for GIF arms with noise_std: cert, the defaults of OpenGU's parameter_parser
+  idea_eps:        1.0
+  idea_delta:      1.0e-4
+  idea_l:          0.25    # Lipschitz constant of the loss
+  idea_lambda:     1.0     # strong convexity of the loss
+  idea_c:          0.5     # bound of the training loss per sample
+  idea_hops:       2       # influence hops of a feature request, as find_k_hops in OpenGU
 
 experiment:
   seeds:     [42, 43, 44, 45, 46, 47, 48, 49, 50, 51]
   backbones: [GCN, GIN]
+  original_cache: true   # train Original once per backbone and seed, reuse it across scenarios; false reproduces the submitted runs
+  reseed_arms:    true   # reseed with the trial seed before every method, so arms differ only in what they ablate; false reproduces the submitted runs
+  occlusion_auc:  true   # add the occlusion delta AUC to every row, per station; false reproduces the submitted runs
+  retrain_b_seed_offset: 1000   # Retrain_b reseeds with seed + offset, same split
 aux:
   gamma:            0.5
   n_attack_types:   5
   aux_hidden:       64
+
+arms:        # ablation and baseline arms of E3; GDGU arms override the gdgu block, GIF arms (base: gif) the gif block
+  GDGU_ls:         {step: line_search}                        # GDGU evaluated in E3, line search over line_search_grid
+  GDGU_submitted:  {sign: submitted, step: clip, grad_mode: train, bn_recal: momentum}  # the submitted GDGU
+  Correction_only: {max_norm: 0.1, do_bn: false, finetune_epochs: 0}
+  BN_only:         {do_step: false, finetune_epochs: 0}
+  Finetune_only:   {do_step: false}                           # BN recalibration plus fine-tuning
+  Random_step:     {max_norm: 0.1, direction: random}         # random direction of the same length
+  Mask_only:       {do_step: false, do_bn: false, finetune_epochs: 0}  # no parameter update
+  Finetune_pure:   {do_step: false, do_bn: false}             # fine-tuning alone, no correction and no BN recalibration (R1-B2, R3-1)
+  # FT budgets of the main table (E3ft); 25 epochs is Finetune_pure, to convergence is WarmStart
+  FTpure_e10:      {do_step: false, do_bn: false, finetune_epochs: 10}
+  FTpure_e50:      {do_step: false, do_bn: false, finetune_epochs: 50}
+  FTpure_e100:     {do_step: false, do_bn: false, finetune_epochs: 100}
+  # GIF arms, base: gif runs the GIF update with optional noise and fine-tuning
+  GIF_FT:          {base: gif, finetune_epochs: 25}           # GIF plus the GDGU fine-tuning, labelled IDEA in the submission (R1-RA7)
+  IDEA_s0.001:     {base: gif, noise_std: 0.001}              # IDEA as in OpenGU: the GIF update plus Gaussian noise, no fine-tuning
+  IDEA_cert:       {base: gif, noise_std: cert}               # IDEA with the noise its bound needs for (eps, delta) certification
+  GIF_fullHVP:     {base: gif, hvp: full}                     # memory of the submitted HVP, one seed per feeder and backbone
+  # E5 from-scratch control: FT 50 and 100 epochs pass FR at S7, so the same budgets
+  # from a freshly initialized model (init: scratch)
+  Scratch_e50:         {do_step: false, do_bn: false, finetune_epochs: 50, init: scratch}
+  Scratch_e100:        {do_step: false, do_bn: false, finetune_epochs: 100, init: scratch}
