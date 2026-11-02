@@ -6,7 +6,7 @@ the normal graphs and the graphs of that type in the E3 test split. This script 
 logits with the withdrawn power removed (test_occ) and the test indices and recomputes the
 forgotten-station ROC-AUC on that subset, per station as src.training.evaluate_model does. On the whole
 test split it must give the ROC_forget of the E3 rows, which the output checks (Check_diff).
-Only reads the E3 outputs and the data cache; writes e10_seen_floor_<bus>.csv to results/2026-10-15_E4E10
+Only reads the E3 outputs and the data cache; writes e10_seen_floor_<bus>.csv to results/sequential_unseen
 or to --out.
 
 Usage:
@@ -23,8 +23,8 @@ import torch
 from sklearn.metrics import roc_auc_score
 
 ROOT = Path(__file__).resolve().parents[1]             # the repository
-RUN = ROOT / 'results' / '2026-10-15_E4E10'
-E3 = RUN.parent / '2026-10-01_E3'
+RUN = ROOT / 'results' / 'sequential_unseen'
+E3 = RUN.parent / 'comparison'
 sys.path.insert(0, str(ROOT))
 
 from scripts.train import load_experiment, load_data, resolve_feature_mode  # noqa: E402
@@ -44,7 +44,7 @@ def main():
     p.add_argument('--backbone', default='GCN')
     p.add_argument('--seeds', type=int, nargs='+', default=[42, 43, 44, 45, 46])
     p.add_argument('--scenarios', nargs='+', required=True)
-    p.add_argument('--data-cache', default=str(RUN / 'data_cache'))
+    p.add_argument('--data-cache', default=str(E3 / 'data_cache'))
     p.add_argument('--data-dir', default=str(ROOT.parent / 'Source' / 'PB_data' / '3_EVCS Attacks'),
                    help='PowerBench EVCS data, as --data_dir of train.py')
     p.add_argument('--out', default=str(RUN), help='output folder')

@@ -2,11 +2,11 @@
 
 Per trial (feeder, scenario, backbone, seed) and method, the test-set metrics and their difference from
 full retraining (FR, Retrain) of the same trial. Sources:
-  E3 (results/2026-10-01_E3): Mask_only, GIF, IDEA_s0.001, IDEA_cert, FT 25 epochs (Finetune_pure),
+  E3 (results/comparison): Mask_only, GIF, IDEA_s0.001, IDEA_cert, FT 25 epochs (Finetune_pure),
       WarmStart (fine-tuning to convergence with the training procedure), Retrain, Retrain_b. The Retrain
       and Retrain_b rows of 34-bus GCN S3 s47 and GIN S3 s49 come from redo_cap_34bus (the 600-epoch cap).
   E3ft (this folder): FT 10, 50 and 100 epochs (FTpure_e10, _e50, _e100) on every E3 trial.
-  E5 (results/2026-10-02_E5/budget_<bus>): FT 5, 200 and 300 epochs, S1 and seeds 42 to 46 only.
+  E5 (results/controls/budget_<bus>, for the letter, where it exists): FT 5, 200 and 300 epochs, S1 and seeds 42 to 46 only.
 Timing: quiet phase only (one process per GPU), S1, seeds 42 to 44: FT from this folder's quiet_<bus>,
 the other methods from E3's quiet_<bus>; for 123-bus GIN s42 and GCN s44 E3 took the times from
 quiet_redo_123bus, so this script does the same.
@@ -20,11 +20,11 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-RUN = Path(__file__).resolve().parents[1] / 'results' / '2026-10-12_E3ft'   # the E3ft runs
+RUN = Path(__file__).resolve().parents[1] / 'results' / 'ft_epochs'   # the E3ft runs
 OUT = Path(sys.argv[1]) if len(sys.argv) > 1 else RUN   # a test run writes elsewhere
 OUT.mkdir(parents=True, exist_ok=True)
 R = RUN.parent
-E3, E5 = R / '2026-10-01_E3', R / '2026-10-02_E5'
+E3, E5 = R / 'comparison', R / 'controls'
 FEEDERS = ('34bus', '123bus')
 FULL = {'34bus': 'S3', '123bus': 'S5'}           # all stations withdrawn
 METRICS = ['Macro_ROC', 'ROC_forget', 'MIA_forget', 'Macro_F1']
@@ -124,6 +124,8 @@ def main():
     # Same-trial check: E3ft and E5 both have FT 10, 50, 100 at S1 seeds 42-46 (GPU run-to-run noise only)
     for bus in FEEDERS:
         e5 = frame(rows([E5 / f'budget_{bus}'], 'E5'))
+        if e5.empty:   # the E5 runs of the letter, optional
+            continue
         a = T[(T.feeder == bus) & (T.Scenario == 'S1') & T.method.isin(['FT_e10', 'FT_e50', 'FT_e100'])
               & T.Seed.between(42, 46)]
         b = e5[e5.Method.isin(['FTpure_e10', 'FTpure_e50', 'FTpure_e100'])].copy()

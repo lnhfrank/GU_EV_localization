@@ -19,7 +19,7 @@ single-station attack graphs from the mean normal day on the deviation of the st
 power, bus by bus (beta_ij, p.u. per kW), and compares it with the prediction -R_eff(i, j) / 1000
 (S_base = 1 MVA, so 1 kW = 1e-3 p.u.).
 
-Writes, to results/2026-10-12_E9topo or to the folder given as the first argument: e9_distance.csv,
+Writes, to results/leakage or to the folder given as the first argument: e9_distance.csv,
 e9_auc_all.csv, e9_auc_type.csv, e9_lindistflow.csv and compute_e9.txt (the printed summary). The PowerBench
 EVCS data are read from EVCS_DATA, as --data_dir of train.py.
 """
@@ -47,10 +47,10 @@ ROOT = Path(__file__).resolve().parents[1]             # the repository
 sys.path.insert(0, str(ROOT))
 from src.noise import add_voltage_noise  # noqa: E402
 
-OUT = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / 'results' / '2026-10-12_E9topo'   # the output folder
+OUT = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / 'results' / 'leakage'   # the output folder
 OUT.mkdir(parents=True, exist_ok=True)
 EVCS_DATA = Path(os.environ.get('EVCS_DATA', ROOT.parent / 'Source' / 'PB_data' / '3_EVCS Attacks'))
-DATA_CACHE = ROOT / 'results' / '2026-10-01_E3' / 'data_cache'
+DATA_CACHE = ROOT / 'results' / 'comparison' / 'data_cache'
 GML = {'34bus': EVCS_DATA / '34_bus' / '34busEx.gml', '123bus': EVCS_DATA / '123_bus' / '123busEx.gml'}
 # Nominal line-to-line voltage of each section (kV). The IEEE 34-bus feeder runs at 24.9 kV except
 # the 4.16 kV section behind transformer xfm1 (832-888); the 123-bus feeder runs at 4.16 kV except the

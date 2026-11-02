@@ -2,15 +2,14 @@
 
 Usage:
     python scripts/make_tables.py --check-submitted   # rebuild Table II of the submission, compare with the tex
-    python scripts/make_tables.py [--out results/2026-10-20_tables] [--tex Paper_2026_ITSG/tables]
+    python scripts/make_tables.py [--out results/tables] [--tex results/tables/tex] [--letter]
 
 Sources (under results/, which git ignores):
-  E3   2026-10-01_E3/{main,quiet,rest}_<bus>: the main-table methods except FT 10, 50 and 100 epochs, 34-bus and
-       123-bus, seeds 42 to 51. The Retrain and Retrain_b rows of 34-bus GCN S3 s47 and GIN S3 s49 come from
-       redo_cap_34bus, rerun after the old 600-epoch cap.
-  E3ft 2026-10-12_E3ft/main_<bus>: FT 10, 50 and 100 epochs on every E3 trial.
-  8500 2026-10-15_8500/{quiet,main}_8500bus: every method, S1 and S7, GCN and GIN, seeds 42 to 46, and
-       2026-10-29_8500_s47-51/main_8500bus: the same for seeds 47 to 51, with the same code (e5d3c92).
+  E3   comparison/{main,quiet,rest}_<bus>: the main-table methods except FT 10, 50 and 100 epochs, 34-bus and
+       123-bus, seeds 42 to 51. Where comparison/redo_cap_34bus exists, its Retrain and Retrain_b rows replace
+       those of the same trials (in our runs 34-bus GCN S3 s47 and GIN S3 s49, rerun after an old 600-epoch cap).
+  E3ft ft_epochs/main_<bus>: FT 10, 50 and 100 epochs on every E3 trial.
+  8500 8500node/{quiet,main}_8500bus: every method, S1 and S7, GCN and GIN, seeds 42 to 51.
 Per trial (feeder, scenario, backbone, seed) and method: the test metrics of the result rows, the signed gap to
 full-retraining (FR, Retrain) of the same trial, and the distances on the forgotten stations to Retrain_b, the
 same retraining with another seed (seed + 1000): the absolute differences in ROC-AUC and MIA-AUC, the Fidelity
@@ -21,8 +20,8 @@ retraining is: on the 8500-node feeder the power-removed original model agrees w
 and with Retrain_b on 51% (S1). Distances are therefore measured to Retrain_b, and the distance of FR itself to
 Retrain_b is the reference band. Original is scored with the charging power, every other method with
 the withdrawn power removed, as in the runs.
-Timing: quiet phase only (one process per GPU), S1, seeds 42 to 44, as in analysis_ft.py (E3ft) and
-analysis_8500.py; for 123-bus GIN s42 and GCN s44 the E3 times come from quiet_redo_123bus.
+Timing: quiet phase only (one process per GPU), S1, seeds 42 to 44, as in analysis_ft.py (E3ft); for 123-bus
+GIN s42 and GCN s44 the E3 times come from quiet_redo_123bus where it exists.
 Writes trials.csv, timing.csv, one csv per table and tables.txt to --out, and the LaTeX tables to --tex.
 """
 import argparse
@@ -43,10 +42,9 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from src.data import fit_scaler, stratified_split_multilabel  # noqa: E402
 RES = ROOT / 'results'
-E3, E3FT, E8500 = RES / '2026-10-01_E3', RES / '2026-10-12_E3ft', RES / '2026-10-15_8500'
-E8500B = RES / '2026-10-29_8500_s47-51'                     # 8500-node seeds 47 to 51
-RUNS_8500 = [E8500 / 'quiet_8500bus', E8500 / 'main_8500bus', E8500B / 'main_8500bus']
-ARCHIVE = RES / 'archived (no useful)' / '2026-06-02'
+E3, E3FT, E8500 = RES / 'comparison', RES / 'ft_epochs', RES / '8500node'
+RUNS_8500 = [E8500 / 'quiet_8500bus', E8500 / 'main_8500bus']
+ARCHIVE = RES / 'submitted' / 'runs'                        # the runs of the submission, for the letter
 FEEDERS = {'34bus': 'IEEE 34-bus', '123bus': 'IEEE 123-bus', '8500bus': 'IEEE 8500-node'}
 FULL = {'34bus': 'S3', '123bus': 'S5', '8500bus': 'S7'}        # every station withdrawn
 KEY = ['feeder', 'Backbone', 'Scenario', 'Seed']
@@ -75,14 +73,14 @@ ABLATION = [('Mask_only', 'Original (power removed)'), ('Correction_only', 'Corr
             ('BN_only', 'BN recalibration only'), ('GDGU_submitted', 'GDGU as submitted'),
             ('GDGU_ls', 'Correction, line search + BN + FT 25'), ('Random_step', 'Random step + BN + FT 25'),
             ('Finetune_only', 'BN + FT 25'), ('Finetune_pure', 'FT 25'), ('Retrain_b', 'FR, another seed')]
-E4E10 = RES / '2026-10-15_E4E10'
-OLD8500 = RES / 'archived (no useful)' / '2026-05-09_21'   # the 8500-node runs behind the submitted Table II, cap 300
-E9N = RES / '2026-10-06_E9'                                 # E9 part 4, the floor under voltage noise
+E4E10, SEQ = RES / 'sequential_unseen', RES / 'sequential'   # the tables of analysis_e4e10.py, the E4 runs
+OLD8500 = RES / 'submitted' / '8500'   # the 8500-node runs behind the submitted Table II, cap 300
+E9N = RES / 'noise'                                         # E9 part 4, the floor under voltage noise
 NOISE_LEVELS = [('clean', 'outputs', 'no noise'), ('snr20', 'outputs_snr20', '20 dB'),
                 ('snr10', 'outputs_snr10', '10 dB'), ('snr0', 'outputs_snr0', '0 dB')]
 # Sensitivity of the correction step (E5, 34-bus, S1, seeds 42 to 46, each arm + BN + FT 25): a fixed step rho
 # along -dg/|dg|, or the submitted rule dg/lambda capped at |step| = 1 (corrected sign)
-SENS = RES / '2026-10-02_E5' / 'sens_34bus'
+SENS = RES / 'controls' / 'sens_34bus'
 SENS_ARMS = [(f'GDGU_rho{r}', 'Fixed step', r'$\rho$', r) for r in ('0.01', '0.03', '0.1', '0.3', '1')] + \
             [(f'GDGU_clip_lam{v}', 'Clip rule', r'$\lambda$', v) for v in ('0.01', '0.1', '1', '10', '100')]
 COLUMNS = [(bus, scen) for bus in FEEDERS for scen in ('S1', FULL[bus])]
@@ -200,7 +198,7 @@ def trials():
         e3 = raw([E3 / f'{d}_{bus}' for d in ('main', 'quiet', 'rest')])
         e3 = e3[e3.Method.isin(E3_METHODS)]
         redo_files = None
-        if bus == '34bus':
+        if bus == '34bus' and (E3 / 'redo_cap_34bus').exists():
             redo = raw([E3 / 'redo_cap_34bus'])
             redo = redo[redo.Method.isin(['Retrain', 'Retrain_b'])]
             k = ['Backbone', 'Scenario', 'Seed', 'Method']
@@ -245,7 +243,7 @@ def timing():
     for bus in ('34bus', '123bus'):
         q3 = raw([E3 / f'quiet_{bus}'])
         q3 = q3[q3.Method.isin(E3_METHODS) & (q3.Method != 'Finetune_pure')]   # FT comes from E3ft's quiet runs
-        if bus == '123bus':
+        if bus == '123bus' and (E3 / 'quiet_redo_123bus').exists():
             redo = raw([E3 / 'quiet_redo_123bus'])
             k = ['Backbone', 'Seed', 'Method']
             q3 = pd.concat([q3.merge(redo[k], on=k, how='left', indicator=True).query('_merge == "left_only"')
@@ -275,7 +273,7 @@ def signed(v, digits=3):
 def e3_raw(bus):
     """Every arm of E3 on a feeder, with the two Retrain rows of 34-bus rerun after the old cap replaced."""
     e3 = raw([E3 / f'{d}_{bus}' for d in ('main', 'quiet', 'rest')])
-    if bus == '34bus':
+    if bus == '34bus' and (E3 / 'redo_cap_34bus').exists():
         redo = raw([E3 / 'redo_cap_34bus'])
         redo = redo[redo.Method.isin(['Retrain', 'Retrain_b'])]
         k = ['Backbone', 'Scenario', 'Seed', 'Method']
@@ -507,7 +505,7 @@ def letter_numbers(log):
         'against the RMS of the weights of the original model')
     for bus, rows, caches in (('34bus', e3_raw('34bus'), [E3 / 'cache_34bus_e3000']),
                               ('123bus', e3_raw('123bus'), [E3 / 'cache_123bus_e3000']),
-                              ('8500bus', raw(RUNS_8500), [E8500 / 'cache_8500', E8500B / 'cache_8500'])):
+                              ('8500bus', raw(RUNS_8500), [E8500 / 'cache_8500'])):
         c = rows[rows.Method == 'IDEA_cert']
         one, full = c[c.Scenario == 'S1'].Noise_std, c[c.Scenario == FULL[bus]].Noise_std
         rms = []
@@ -587,7 +585,7 @@ def agreement_e4_e9(log):
     log('== E4 sequential requests: forgotten-station Fidelity / prob. diff to Retrain_b per step, FR\'s own the band '
         '(Fidelity to FR, the same seed, for comparison)')
     for bus in ('34bus', '123bus'):
-        a = run_agreement(sorted(glob.glob(str(E4E10 / f'e4_{bus}' / 'outputs' / '*.pt'))))
+        a = run_agreement(sorted(glob.glob(str(SEQ / bus / 'outputs' / '*.pt'))))
         for scen in sorted(a.Scenario.unique(), key=lambda x: int(x[1:])):
             g = a[a.Scenario == scen]
             log(f'   {bus} {scen} (n {g[g.method == "Retrain"].shape[0]}): '
@@ -652,8 +650,10 @@ def to_latex(tab, caption, label, note='', sep=5, color='', width='', rule_befor
 def main():
     p = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     p.add_argument('--check-submitted', action='store_true')
-    p.add_argument('--out', type=Path, default=RES / '2026-10-20_tables')
-    p.add_argument('--tex', type=Path, default=ROOT / 'Paper_2026_ITSG' / 'tables')
+    p.add_argument('--out', type=Path, default=RES / 'tables')
+    p.add_argument('--tex', type=Path, default=RES / 'tables' / 'tex')
+    p.add_argument('--letter', action='store_true',
+                   help='also the analyses of the response letter, which need runs that the README does not list')
     args = p.parse_args()
     if args.check_submitted:
         raise SystemExit(1 if check_submitted() else 0)
@@ -901,98 +901,99 @@ def main():
             + f'; FT to convergence over Retrain: ratio of the medians {e["WarmStart"].median() / e["Retrain"].median():.2f}, '
             f'median of the paired ratios {ratio.median():.2f}')
 
-    # 8. Component ablation for the letter (R1-B2, R3-1): the GDGU arms of E3
-    A = ablation_trials()
-    A.to_csv(args.out / 'ablation_trials.csv', index=False)
-    tab = []
-    for m, label in ABLATION:
-        row = {'method': m}
-        for bus in ('34bus', '123bus'):
-            g = A[(A.feeder == bus) & (A.method == m)]
-            for c in ('Macro_ROC', 'ROC_forget', 'MIA_forget'):
-                row[f'{bus} {c}'] = g[f'gap_{c}'].mean()
-        tab.append(row)
-    tab = pd.DataFrame(tab).set_index('method')
-    tab.to_csv(args.out / 'table_ablation.csv')
-    cols = [(b, c) for b in ('34bus', '123bus') for c in ('Macro_ROC', 'ROC_forget', 'MIA_forget')]
-    tex = [r'\begin{table}[t]', r'\centering',
-           r'\caption{Component ablation (E3): gap to FR of the same trial, mean over the scenarios, '
-           r'backbones and seeds 42 to 51. Utility is the Macro ROC-AUC over all stations.}', r'\label{tab:ablation}',
-           r'\footnotesize', r'\setlength{\tabcolsep}{3pt}', r'\begin{tabular}{lrrrrrr}', r'\toprule',
-           mr('Arm') + r' & \multicolumn{3}{c}{34-bus} & \multicolumn{3}{c}{123-bus} \\',
-           r'\cmidrule(lr){2-4} \cmidrule(lr){5-7}', r' & Utility & ROC$_f$ & MIA$_f$ & Utility & ROC$_f$ & MIA$_f$ \\',
-           r'\midrule']
-    for m, label in ABLATION:
-        tex.append(f'{label} & ' + ' & '.join(signed(tab.loc[m, f"{b} {c}"]) for b, c in cols) + r' \\')
-    tex += [r'\bottomrule', r'\end{tabular}', r'\end{table}']
-    (args.tex / 'table_ablation.tex').write_text('\n'.join(tex) + '\n')
-    log('== ablation (E3): signed gap to FR, mean over scenarios, backbones and seeds (Macro ROC / forgotten ROC / MIA)')
-    for m, label in ABLATION:
-        log(f'   {m:15s} ' + ', '.join(f'{b} {tab.loc[m, f"{b} Macro_ROC"]:+.4f} / {tab.loc[m, f"{b} ROC_forget"]:+.4f} '
-                                       f'/ {tab.loc[m, f"{b} MIA_forget"]:+.4f}' for b in ('34bus', '123bus')))
-    for bus, need in (('34bus', 5), ('123bus', 8)):
-        cells = preregistered(A[A.feeder == bus])
-        log(f'   pre-registered rule (10/1), {bus}: GDGU_ls against BN + FT 25, paired by seed; a cell counts when '
-            f'the Macro ROC gain is above 0.005 with one-sided p < 0.05: {cells.counts.sum()}/{len(cells)} cells '
-            f'(needed {need}); mean gains {cells.gain.min():+.4f} to {cells.gain.max():+.4f}; '
-            f'forgotten ROC {cells.gain_forget.min():+.4f} to {cells.gain_forget.max():+.4f}, '
-            f'MIA {cells.gain_mia.min():+.4f} to {cells.gain_mia.max():+.4f}')
-    # R3-1: the correction against FT alone and against a random step followed by the same BN and FT, cell by cell
-    log('== letter, R3-1: GDGU against FT alone (FT 25, no correction, no BN) and against a random step + BN + FT 25 '
-        '(E3), per backbone x scenario cell, paired by seed, two-sided Wilcoxon: range of the cell mean differences '
-        'and cells with p < 0.05, Macro ROC (utility) / forgotten ROC / MIA')
-    for bus in ('34bus', '123bus'):
-        a = A[A.feeder == bus]
-        e3 = e3_raw(bus)
-        med = e3[e3.Method.isin(['GDGU_ls', 'GDGU_submitted', 'Random_step'])].groupby('Method').Step_len.median()
-        log(f'   {bus}: median step length GDGU_ls {med["GDGU_ls"]:.3f}, GDGU_submitted {med["GDGU_submitted"]:.3f}, '
-            f'Random_step {med["Random_step"]:.3f}')
-        for arm in ('GDGU_ls', 'GDGU_submitted'):
-            for ctrl in ('Finetune_pure', 'Random_step'):
-                parts = []
+    if args.letter:   # sections 8 to 12 are for the response letter
+        # 8. Component ablation for the letter (R1-B2, R3-1): the GDGU arms of E3
+        A = ablation_trials()
+        A.to_csv(args.out / 'ablation_trials.csv', index=False)
+        tab = []
+        for m, label in ABLATION:
+            row = {'method': m}
+            for bus in ('34bus', '123bus'):
+                g = A[(A.feeder == bus) & (A.method == m)]
                 for c in ('Macro_ROC', 'ROC_forget', 'MIA_forget'):
-                    cells = control_cells(a, arm, ctrl, c)
-                    parts.append(f'{c} {cells["mean"].min():+.4f} to {cells["mean"].max():+.4f}, '
-                                 f'p < 0.05 in {(cells.p < 0.05).sum()}/{len(cells)}')
-                log(f'   {bus} {arm} vs {ctrl}: ' + '; '.join(parts))
-
-    # 9. Sensitivity of the correction step to rho and lambda for the letter (R1-RA10, R2-7, R3-3)
-    if SENS.exists():                       # the E5 runs of the letter, not needed for the paper
-        V, Vt = sensitivity()
-        V.to_csv(args.out / 'table_sensitivity.csv', index=False)
-        Vt.to_csv(args.out / 'sensitivity_trials.csv', index=False)
+                    row[f'{bus} {c}'] = g[f'gap_{c}'].mean()
+            tab.append(row)
+        tab = pd.DataFrame(tab).set_index('method')
+        tab.to_csv(args.out / 'table_ablation.csv')
+        cols = [(b, c) for b in ('34bus', '123bus') for c in ('Macro_ROC', 'ROC_forget', 'MIA_forget')]
         tex = [r'\begin{table}[t]', r'\centering',
-               r'\caption{Sensitivity of the correction step (E5, 34-bus, S1, three backbones, seeds 42 to 46; every arm '
-               r'is followed by BN recalibration and FT 25): median step length, share of requests where the clip acts, '
-               r'gap to FR, and the Macro ROC-AUC difference to BN + FT 25 without a correction (paired, '
-               r'Wilcoxon $p$).}', r'\label{tab:sensitivity}', r'\footnotesize', r'\setlength{\tabcolsep}{3pt}',
-               r'\begin{tabular}{llrrrrrrr}', r'\toprule',
-               ' & '.join(mr(h) for h in ('Rule', 'Value', 'Step', 'Clipped'))
-               + r' & \multicolumn{3}{c}{Gap to FR} & \multicolumn{2}{c}{vs. BN + FT 25} \\',
-               r'\cmidrule(lr){5-7} \cmidrule(lr){8-9}', r' & & & & Utility & ROC$_f$ & MIA$_f$ & Utility & $p$ \\',
+               r'\caption{Component ablation (E3): gap to FR of the same trial, mean over the scenarios, '
+               r'backbones and seeds 42 to 51. Utility is the Macro ROC-AUC over all stations.}', r'\label{tab:ablation}',
+               r'\footnotesize', r'\setlength{\tabcolsep}{3pt}', r'\begin{tabular}{lrrrrrr}', r'\toprule',
+               mr('Arm') + r' & \multicolumn{3}{c}{34-bus} & \multicolumn{3}{c}{123-bus} \\',
+               r'\cmidrule(lr){2-4} \cmidrule(lr){5-7}', r' & Utility & ROC$_f$ & MIA$_f$ & Utility & ROC$_f$ & MIA$_f$ \\',
                r'\midrule']
-        for _, r in V.iterrows():
-            val = f'{r.symbol} = {r.value}' if r.symbol else ''
-            step = '' if np.isnan(r.step) else f'{r.step:.3f}'
-            clip = '' if np.isnan(r.clipped) else f'{r.clipped:.0%}'.replace('%', r'\%')
-            vs = '' if r.arm == 'Finetune_only' else signed(r.vs_bn, 4)
-            p = '' if r.arm == 'Finetune_only' or np.isnan(r.p_vs_bn) else f'{r.p_vs_bn:.2g}'
-            tex.append(f'{r.kind} & {val} & {step} & {clip} & {signed(r.macro_gap)} & {signed(r.forget_gap)} & '
-                       f'{signed(r.mia_gap)} & {vs} & {p}' + r' \\')
+        for m, label in ABLATION:
+            tex.append(f'{label} & ' + ' & '.join(signed(tab.loc[m, f"{b} {c}"]) for b, c in cols) + r' \\')
         tex += [r'\bottomrule', r'\end{tabular}', r'\end{table}']
-        (args.tex / 'table_sensitivity.tex').write_text('\n'.join(tex) + '\n')
-        log('== sensitivity of the correction step (E5, 34-bus S1): median step, clipped share, gap to FR '
-            '(Macro ROC / forgotten ROC / MIA), Macro ROC against BN + FT 25 (paired mean, Wilcoxon p)')
-        for _, r in V.iterrows():
-            log(f'   {r.arm:18s} n {r.n:2d}  step {r.step:.4f}  clipped {r.clipped:.2f}  gap {r.macro_gap:+.4f} / '
-                f'{r.forget_gap:+.4f} / {r.mia_gap:+.4f}  vs BN + FT 25 {r.vs_bn:+.4f} (p {r.p_vs_bn:.3g})')
+        (args.tex / 'table_ablation.tex').write_text('\n'.join(tex) + '\n')
+        log('== ablation (E3): signed gap to FR, mean over scenarios, backbones and seeds (Macro ROC / forgotten ROC / MIA)')
+        for m, label in ABLATION:
+            log(f'   {m:15s} ' + ', '.join(f'{b} {tab.loc[m, f"{b} Macro_ROC"]:+.4f} / {tab.loc[m, f"{b} ROC_forget"]:+.4f} '
+                                           f'/ {tab.loc[m, f"{b} MIA_forget"]:+.4f}' for b in ('34bus', '123bus')))
+        for bus, need in (('34bus', 5), ('123bus', 8)):
+            cells = preregistered(A[A.feeder == bus])
+            log(f'   pre-registered rule (10/1), {bus}: GDGU_ls against BN + FT 25, paired by seed; a cell counts when '
+                f'the Macro ROC gain is above 0.005 with one-sided p < 0.05: {cells.counts.sum()}/{len(cells)} cells '
+                f'(needed {need}); mean gains {cells.gain.min():+.4f} to {cells.gain.max():+.4f}; '
+                f'forgotten ROC {cells.gain_forget.min():+.4f} to {cells.gain_forget.max():+.4f}, '
+                f'MIA {cells.gain_mia.min():+.4f} to {cells.gain_mia.max():+.4f}')
+        # R3-1: the correction against FT alone and against a random step followed by the same BN and FT, cell by cell
+        log('== letter, R3-1: GDGU against FT alone (FT 25, no correction, no BN) and against a random step + BN + FT 25 '
+            '(E3), per backbone x scenario cell, paired by seed, two-sided Wilcoxon: range of the cell mean differences '
+            'and cells with p < 0.05, Macro ROC (utility) / forgotten ROC / MIA')
+        for bus in ('34bus', '123bus'):
+            a = A[A.feeder == bus]
+            e3 = e3_raw(bus)
+            med = e3[e3.Method.isin(['GDGU_ls', 'GDGU_submitted', 'Random_step'])].groupby('Method').Step_len.median()
+            log(f'   {bus}: median step length GDGU_ls {med["GDGU_ls"]:.3f}, GDGU_submitted {med["GDGU_submitted"]:.3f}, '
+                f'Random_step {med["Random_step"]:.3f}')
+            for arm in ('GDGU_ls', 'GDGU_submitted'):
+                for ctrl in ('Finetune_pure', 'Random_step'):
+                    parts = []
+                    for c in ('Macro_ROC', 'ROC_forget', 'MIA_forget'):
+                        cells = control_cells(a, arm, ctrl, c)
+                        parts.append(f'{c} {cells["mean"].min():+.4f} to {cells["mean"].max():+.4f}, '
+                                     f'p < 0.05 in {(cells.p < 0.05).sum()}/{len(cells)}')
+                    log(f'   {bus} {arm} vs {ctrl}: ' + '; '.join(parts))
 
-    # 10. E4 and E10a for the letter, from the tables of results/2026-10-15_E4E10/analysis_e4e10.py
-    e4_e10_tables(args, log)
-    # 11. Numbers of the letter outside the tables
-    letter_numbers(log)
-    # 12. Fidelity of the sequential runs and under noise, to Retrain_b
-    agreement_e4_e9(log)
+        # 9. Sensitivity of the correction step to rho and lambda for the letter (R1-RA10, R2-7, R3-3)
+        if SENS.exists():                       # the E5 runs of the letter, not needed for the paper
+            V, Vt = sensitivity()
+            V.to_csv(args.out / 'table_sensitivity.csv', index=False)
+            Vt.to_csv(args.out / 'sensitivity_trials.csv', index=False)
+            tex = [r'\begin{table}[t]', r'\centering',
+                   r'\caption{Sensitivity of the correction step (E5, 34-bus, S1, three backbones, seeds 42 to 46; every arm '
+                   r'is followed by BN recalibration and FT 25): median step length, share of requests where the clip acts, '
+                   r'gap to FR, and the Macro ROC-AUC difference to BN + FT 25 without a correction (paired, '
+                   r'Wilcoxon $p$).}', r'\label{tab:sensitivity}', r'\footnotesize', r'\setlength{\tabcolsep}{3pt}',
+                   r'\begin{tabular}{llrrrrrrr}', r'\toprule',
+                   ' & '.join(mr(h) for h in ('Rule', 'Value', 'Step', 'Clipped'))
+                   + r' & \multicolumn{3}{c}{Gap to FR} & \multicolumn{2}{c}{vs. BN + FT 25} \\',
+                   r'\cmidrule(lr){5-7} \cmidrule(lr){8-9}', r' & & & & Utility & ROC$_f$ & MIA$_f$ & Utility & $p$ \\',
+                   r'\midrule']
+            for _, r in V.iterrows():
+                val = f'{r.symbol} = {r.value}' if r.symbol else ''
+                step = '' if np.isnan(r.step) else f'{r.step:.3f}'
+                clip = '' if np.isnan(r.clipped) else f'{r.clipped:.0%}'.replace('%', r'\%')
+                vs = '' if r.arm == 'Finetune_only' else signed(r.vs_bn, 4)
+                p = '' if r.arm == 'Finetune_only' or np.isnan(r.p_vs_bn) else f'{r.p_vs_bn:.2g}'
+                tex.append(f'{r.kind} & {val} & {step} & {clip} & {signed(r.macro_gap)} & {signed(r.forget_gap)} & '
+                           f'{signed(r.mia_gap)} & {vs} & {p}' + r' \\')
+            tex += [r'\bottomrule', r'\end{tabular}', r'\end{table}']
+            (args.tex / 'table_sensitivity.tex').write_text('\n'.join(tex) + '\n')
+            log('== sensitivity of the correction step (E5, 34-bus S1): median step, clipped share, gap to FR '
+                '(Macro ROC / forgotten ROC / MIA), Macro ROC against BN + FT 25 (paired mean, Wilcoxon p)')
+            for _, r in V.iterrows():
+                log(f'   {r.arm:18s} n {r.n:2d}  step {r.step:.4f}  clipped {r.clipped:.2f}  gap {r.macro_gap:+.4f} / '
+                    f'{r.forget_gap:+.4f} / {r.mia_gap:+.4f}  vs BN + FT 25 {r.vs_bn:+.4f} (p {r.p_vs_bn:.3g})')
+
+        # 10. E4 and E10a for the letter, from the tables of scripts/analysis_e4e10.py
+        e4_e10_tables(args, log)
+        # 11. Numbers of the letter outside the tables
+        letter_numbers(log)
+        # 12. Fidelity of the sequential runs and under noise, to Retrain_b
+        agreement_e4_e9(log)
     (args.out / 'tables.txt').write_text('\n'.join(lines) + '\n')
     print(f'wrote {args.out} and {args.tex}')
 

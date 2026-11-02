@@ -7,9 +7,9 @@ five-minute steps, standardized), and the same task, the station's attack label 
 the splits of the GNN runs (src.data.stratified_split_multilabel with the run seed; fit on the 70%
 training part, scored on the 15% test part) and their noise (src.noise.add_voltage_noise with the run
 seed): seeds 42 to 51 without noise as in E3, seeds 42 to 46 at 20, 10 and 0 dB as in E9 part 4.
-GNN floors: E3 (Retrain rows; 34-bus GCN S3 s47 from redo_cap_34bus) and results/2026-10-06_E9.
+GNN floors: E3 (Retrain rows; 34-bus GCN S3 s47 from redo_cap_34bus) and results/noise.
 Writes e9_joint_auc.csv (one row per feeder, noise level, seed and station), e9_joint_vs_floor.csv (means)
-and compute_e9_joint.txt to results/2026-10-12_E9topo, or to the folder given as the first argument.
+and compute_e9_joint.txt to results/leakage, or to the folder given as the first argument.
 """
 import glob
 import os
@@ -35,9 +35,9 @@ sys.path.insert(0, str(ROOT))
 from src.data import stratified_split_multilabel  # noqa: E402
 from src.noise import add_voltage_noise  # noqa: E402
 
-OUT = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / 'results' / '2026-10-12_E9topo'   # the output folder
+OUT = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / 'results' / 'leakage'   # the output folder
 OUT.mkdir(parents=True, exist_ok=True)
-E3, E9N = ROOT / 'results' / '2026-10-01_E3', ROOT / 'results' / '2026-10-06_E9'
+E3, E9N = ROOT / 'results' / 'comparison', ROOT / 'results' / 'noise'
 FULL = {'34bus': 'S3', '123bus': 'S5'}
 RUNS = [(None, s) for s in range(42, 52)] + [(snr, s) for snr in (20, 10, 0) for s in range(42, 47)]
 N_JOBS = 25
@@ -76,7 +76,7 @@ def gnn_floors(bus):
         df = pd.concat([pd.read_csv(p) for p in paths], ignore_index=True)
         return df[(df.Method == 'Retrain') & (df.Scenario == FULL[bus])]
     clean = read([p for d in ('main', 'quiet', 'rest') for p in glob.glob(str(E3 / f'{d}_{bus}' / '*_raw.csv'))])
-    if bus == '34bus':                                   # the Retrain row that hit the old cap
+    if bus == '34bus' and (E3 / 'redo_cap_34bus').exists():   # the Retrain row that hit the old cap
         redo = read(glob.glob(str(E3 / 'redo_cap_34bus' / '*_raw.csv')))
         key = ['Backbone', 'Seed']
         clean = pd.concat([clean.merge(redo[key], on=key, how='left', indicator=True)

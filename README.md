@@ -72,7 +72,7 @@ Download `EVCS Attacks.zip` from the Zenodo record and unzip it. The data folder
 | `scripts/make_tables.py` | Tables III and IV of the paper and the statistics in the text |
 | `notebooks/Paper_Figures.ipynb`, `notebooks/fig_style.py` | Figs. 2 to 9 of the paper |
 
-Every script writes under `results/`, which Git ignores. The folder names below are the ones that the analysis scripts read.
+Every script writes under `results/`, which Git ignores. The analysis scripts read the runs from the `--out-dir` folders given below.
 
 ---
 
@@ -82,46 +82,49 @@ Every script writes under `results/`, which Git ignores. The folder names below 
 
 `scripts/train.py` trains the original model of a trial (feeder, backbone, seed), applies every requested method (`--arms`) to each scenario, and appends one row per scenario and method to `*_raw.csv` in `--out-dir`. `--cache-dir` keeps the original and retrained models, so a later run with the same cache reuses them. Without `--scenario`, all scenarios of the feeder run. The 34-bus and 123-bus feeders use GAT, GCN, and GIN; the 8500-node feeder uses GCN and GIN.
 
-| Runs | Used for | Output folder | Settings |
-|---|---|---|---|
-| Main comparison | Table III, Fig. 4, Sec. III-B and III-C | `results/2026-10-01_E3/main_<bus>` | seeds 42 to 51, `--arms Original Mask_only GIF IDEA_cert Finetune_pure WarmStart Retrain Retrain_b` |
-| FT epochs | Table III, Fig. 4 | `results/2026-10-12_E3ft/main_<bus>` | seeds 42 to 51, `--arms FTpure_e10 FTpure_e50 FTpure_e100` |
-| Voltage noise | Fig. 5, Sec. III-B | `results/2026-10-06_E9/<bus>_clean`, `<bus>_snr20`, `<bus>_snr10`, `<bus>_snr0` | seeds 42 to 46, `--voltage-noise-db 20`, `10`, or `0`, `--arms Original Mask_only GIF Finetune_pure FTpure_e50 FTpure_e100 Retrain Retrain_b` |
-| 8500-node feeder | Table III, Sec. III-C | `results/2026-10-15_8500/main_8500bus`, `results/2026-10-29_8500_s47-51/main_8500bus` | `--bus 8500bus`, scenarios S1 and S7, seeds 42 to 46 and 47 to 51, the arms of the main comparison and of FT epochs |
-| Sequential requests | Fig. 9, Sec. III-D | `results/2026-10-15_E4E10/e4_<bus>`, `results/2026-10-19_E4b/main_<bus>` | `--sequential`, seeds 42 to 46, `--arms Original Mask_only Finetune_pure FTpure_e100 WarmStart Retrain Retrain_b`; the non-sequential FT of the same total epochs in `E4b` without `--sequential`, `--arms FTpure_e75 FTpure_e125` |
-| Unseen attack types | Fig. 8 | `results/2026-10-15_E4E10/e10_holdout_h<t>` (34-bus, S1 and S3), `results/2026-10-19_E10a/holdout_h<t>` (34-bus, S2), `results/2026-10-17_E10a/holdout_h<t>` (123-bus, S1 to S5) | GCN, seeds 42 to 46, `--holdout-attack-type <t>` for t = 1 to 4, `--arms Original Mask_only Retrain Retrain_b` |
-| Cost | Table IV | `quiet_<bus>` next to `main_<bus>` of the first two rows and of the 8500-node feeder | seeds 42 to 44, scenario S1, one process per GPU and nothing else on it |
+| Runs | Settings |
+|---|---|
+| Main comparison | `--out-dir results/comparison/main_<bus>`, `--arms Original Mask_only GIF IDEA_cert Finetune_pure WarmStart Retrain Retrain_b` |
+| FT epochs | `--out-dir results/ft_epochs/main_<bus>`, `--arms FTpure_e10 FTpure_e50 FTpure_e100` |
+| Voltage noise | `--out-dir results/noise/<bus>_clean` without noise, or `results/noise/<bus>_snr<d>` with `--voltage-noise-db <d>` for d = 20, 10, and 0, `--arms Original Mask_only GIF Finetune_pure FTpure_e50 FTpure_e100 Retrain Retrain_b` |
+| 8500-node feeder | `--out-dir results/8500node/main_8500bus`, `--bus 8500bus`, scenarios S1 and S7, the arms of the main comparison and of FT epochs |
+| Sequential requests | `--out-dir results/sequential/<bus>`, `--sequential`, `--arms Original Mask_only Finetune_pure FTpure_e100 GIF_FT Retrain Retrain_b` |
+| One-shot FT | `--out-dir results/sequential/oneshot_<bus>`, without `--sequential`, `--arms FTpure_e75` (34-bus) or `FTpure_e75 FTpure_e125` (123-bus), as many epochs as FT 25 gets over three or five sequential requests |
+| Unseen attack types | `--out-dir results/unseen_types/<bus>_h<t>`, GCN, `--holdout-attack-type <t>` for t = 1 to 4; 34-bus S1 to S3 with `--arms Original Mask_only Finetune_pure FTpure_e100 WarmStart Retrain Retrain_b`, 123-bus S1 to S5 with `--arms Original Mask_only Retrain Retrain_b` |
+| Cost | `--out-dir` `quiet_<bus>` next to `main_<bus>` in `comparison`, `ft_epochs`, and `8500node`, scenario S1, one process per GPU and nothing else on it |
 
 For example, one trial of the main comparison:
 
 ```bash
 python scripts/train.py --bus 34bus --backbone GCN --seed 42 --readout station --save-outputs \
     --arms Original Mask_only GIF IDEA_cert Finetune_pure WarmStart Retrain Retrain_b \
-    --out-dir results/2026-10-01_E3/main_34bus --cache-dir results/2026-10-01_E3/cache_34bus \
-    --data-cache results/2026-10-01_E3/data_cache
+    --out-dir results/comparison/main_34bus --cache-dir results/comparison/cache_34bus \
+    --data-cache results/comparison/data_cache
 ```
 
-`--data-cache` stores the loaded data once, and `scripts/compute_e9.py` reads it from this folder. `Finetune_pure` is FT with 25 epochs, `FTpure_e<n>` FT with n epochs, `WarmStart` FT to convergence, `Mask_only` the original model with the withdrawn power removed and no update, and `Retrain` full retraining.
+`--data-cache` stores the loaded data once, and `scripts/compute_e9.py`, `scripts/compute_e9_joint.py`, and `scripts/e10_seen_floor.py` read it from this folder. `Finetune_pure` is FT with 25 epochs, `FTpure_e<n>` FT with n epochs, `WarmStart` FT to convergence, `GIF_FT` GIF followed by FT 25, `Mask_only` the original model with the withdrawn power removed and no update, and `Retrain` full retraining.
 
 ### 2. Analysis
 
 ```bash
-python scripts/analysis_ft.py                    # FT epochs, results/2026-10-12_E3ft/e3ft_budget_trials.csv
-python scripts/analysis_figB.py                  # Fig. 4, results/2026-10-12_figB
+python scripts/analysis_ft.py                    # FT epochs, results/ft_epochs/e3ft_budget_trials.csv
+python scripts/analysis_figB.py                  # Fig. 4, results/floor_methods
 python scripts/e10_seen_floor.py --bus 34bus --scenarios S1 S2 S3
 python scripts/e10_seen_floor.py --bus 123bus --scenarios S1 S2 S3 S4 S5
-python scripts/analysis_e4e10.py                 # Figs. 8 and 9, results/2026-10-15_E4E10
-python scripts/compute_e9.py                     # Figs. 5 to 7 and the LinDistFlow check, results/2026-10-12_E9topo
+python scripts/analysis_e4e10.py                 # Figs. 8 and 9, results/sequential_unseen
+python scripts/compute_e9.py                     # Figs. 5 to 7 and the LinDistFlow check, results/leakage
 python scripts/compute_e9_joint.py               # logistic regression on all bus voltages, Sec. III-B
 ```
+
+`e10_seen_floor.py` scores FR of the main comparison on the normal graphs and the graphs of one attack type, the reference of Fig. 8 for a type seen in training.
 
 ### 3. Tables
 
 ```bash
-python scripts/make_tables.py --out results/2026-10-30_tables --tex results/2026-10-30_tables/tex
+python scripts/make_tables.py
 ```
 
-`tables.txt` in the output folder holds every number of the text, and `tex/` holds Tables III and IV.
+`results/tables/tables.txt` holds every number of the text, and `results/tables/tex/` holds Tables III and IV. With `--letter`, the script also prints the analyses of the response to the reviewers, which need further runs.
 
 ### 4. Figures
 
